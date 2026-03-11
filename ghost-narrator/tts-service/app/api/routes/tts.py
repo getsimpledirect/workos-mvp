@@ -12,7 +12,7 @@ import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Body, HTTPException
 from fastapi.responses import FileResponse
 
 from app.config import (
@@ -91,8 +91,38 @@ def _sanitize_job_id(job_id: str | None) -> str:
     },
 )
 async def generate(
-    request: GenerateRequest,
     background_tasks: BackgroundTasks,
+    request: GenerateRequest = Body(
+        ...,
+        openapi_examples={
+            "basic": {
+                "summary": "Basic text synthesis",
+                "description": "Simple text with custom job ID and site slug.",
+                "value": {
+                    "text": "Hello, this is a test of the text-to-speech system.",
+                    "job_id": "article-12345",
+                    "site_slug": "my-blog",
+                },
+            },
+            "minimal": {
+                "summary": "Minimal request",
+                "description": "Only the required text field, all others use defaults.",
+                "value": {
+                    "text": "Welcome to our podcast. Today we discuss the latest trends in artificial intelligence and machine learning.",
+                },
+            },
+            "full": {
+                "summary": "Full request with custom GCS path",
+                "description": "All fields populated including a custom GCS output path.",
+                "value": {
+                    "text": "Breaking news: Scientists have discovered a new species of deep-sea fish in the Pacific Ocean.",
+                    "job_id": "news-2024-06-15-pacific-discovery",
+                    "gcs_path": "audio/news/2024/06/pacific-discovery.mp3",
+                    "site_slug": "news-daily",
+                },
+            },
+        },
+    ),
 ) -> GenerateResponse:
     """Submit a TTS job for background processing."""
     # Validate voice sample exists
