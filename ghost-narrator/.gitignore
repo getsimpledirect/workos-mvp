@@ -1,0 +1,76 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# Ghost Narrator - Git Ignore Configuration
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ─── SECRETS — never commit these ─────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.env.local
+secrets/
+*.json.key
+*.pem
+*.key
+
+# ─── Voice samples (biometric data — keep off version control) ────────────────
+tts-service/voices/*
+!tts-service/voices/.gitkeep
+
+# ─── Runtime data ─────────────────────────────────────────────────────────────
+tts-service/output/
+n8n/data/
+
+# ─── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.venv/
+venv/
+ENV/
+env/
+
+# ─── Docker ───────────────────────────────────────────────────────────────────
+*.log
+docker-compose.override.yml
+
+# ─── IDE / Editor ─────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+
+# ─── OS ───────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+*.tmp
+*.temp
+*.bak
+
+# ─── Test / Coverage ──────────────────────────────────────────────────────────
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+.hypothesis/

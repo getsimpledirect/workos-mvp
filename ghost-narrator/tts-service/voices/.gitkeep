@@ -1,0 +1,4 @@
+# This directory contains voice reference files for TTS voice cloning.
+# Place your reference.wav file here (30-60 seconds of clear speech).
+#
+# Voice files are gitignored for privacy - only this .gitkeep is tracked.

@@ -1,0 +1,162 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# Ghost Narrator - Audio Pipeline Services
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# Services:
+#   - redis: Job state persistence
+#   - n8n: Workflow orchestration
+#   - tts-service: Voice-cloning TTS API (XTTS-v2)
+#
+# Usage:
+#   docker compose up -d
+#   docker compose logs -f tts-service
+#
+# Environment Variables (required in .env):
+#   - SERVER_EXTERNAL_IP: External IP for webhook URLs
+#   - N8N_USER: n8n admin username
+#   - N8N_PASSWORD: n8n admin password
+#   - N8N_ENCRYPTION_KEY: n8n encryption key (openssl rand -hex 32)
+#   - GCS_BUCKET_NAME: GCS bucket for audio storage
+#   - VLLM_BASE_URL: URL to vLLM API (default: http://host.docker.internal:8000)
+#   - VLLM_MODEL_NAME: Model name for vLLM (e.g., Qwen/Qwen3-14B)
+#
+# ═══════════════════════════════════════════════════════════════════════════════
+
+services:
+  # ─── Redis: Job State Persistence ────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    networks:
+      - pipeline_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+
+  # ─── n8n: Workflow Orchestration ─────────────────────────────────────────────
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      # Authentication
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_USER}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD}
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      # Server configuration
+      - WEBHOOK_URL=http://${SERVER_EXTERNAL_IP}:5678/
+      - N8N_HOST=0.0.0.0
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      # Database
+      - DB_TYPE=sqlite
+      # Logging
+      - N8N_LOG_LEVEL=info
+      # Timezone
+      - GENERIC_TIMEZONE=${TIMEZONE:-UTC}
+      # External services (passed to workflow)
+      - VLLM_BASE_URL=${VLLM_BASE_URL:-http://host.docker.internal:8000}
+      - VLLM_MODEL_NAME=${VLLM_MODEL_NAME:-Qwen/Qwen3-14B}
+      - TTS_SERVICE_URL=http://tts-service:8020
+    volumes:
+      - n8n_data:/home/node/.n8n
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - pipeline_net
+    depends_on:
+      redis:
+        condition: service_healthy
+      tts-service:
+        condition: service_started
+
+  # ─── TTS Service: Voice-Cloning API ──────────────────────────────────────────
+  tts-service:
+    build:
+      context: ./tts-service
+      dockerfile: Dockerfile
+    image: ghost-tts-service:latest
+    container_name: tts-service
+    restart: unless-stopped
+    ports:
+      - "8020:8020"
+    environment:
+      # TTS configuration
+      - VOICE_SAMPLE_PATH=/app/voices/reference.wav
+      - TTS_LANGUAGE=en
+      - MAX_CHUNK_WORDS=200
+      - DEVICE=${TTS_DEVICE:-cpu}
+      - MAX_WORKERS=${MAX_WORKERS:-4}
+      # Google Cloud Storage
+      - GCS_BUCKET_NAME=${GCS_BUCKET_NAME:-}
+      - GCS_AUDIO_PREFIX=${GCS_AUDIO_PREFIX:-audio/articles}
+      # n8n callback webhook
+      - N8N_CALLBACK_URL=http://n8n:5678/webhook/tts-callback
+      # Redis job store
+      - REDIS_URL=redis://redis:6379/0
+      - REDIS_JOB_TTL=${REDIS_JOB_TTL:-86400}
+    volumes:
+      - ./tts-service/voices:/app/voices:ro
+      - tts_output:/app/output
+      - tts_model_cache:/root/.local/share/tts
+    networks:
+      - pipeline_net
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8020/health')",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 180s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
+
+# ─── Volumes ───────────────────────────────────────────────────────────────────
+volumes:
+  redis_data:
+    driver: local
+  n8n_data:
+    driver: local
+  tts_output:
+    driver: local
+  tts_model_cache:
+    driver: local
+
+# ─── Networks ──────────────────────────────────────────────────────────────────
+networks:
+  pipeline_net:
+    driver: bridge

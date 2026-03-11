@@ -1,0 +1,67 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# TTS Service Requirements
+# ═══════════════════════════════════════════════════════════════════════════════
+# Python Version: 3.11 (required by TTS library)
+#
+# ⚠️ IMPORTANT: DO NOT install these dependencies on Python 3.12+
+# The TTS library only supports Python 3.9-3.11
+#
+# Use Docker to run this service (see QUICKSTART.md):
+#   .\run-docker.ps1 -Detached
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── PyTorch (CPU version) ──────────────────────────────────────────────────────
+# Using CPU-only PyTorch to reduce image size and avoid GPU dependencies
+#
+# NOTE: The Dockerfile uses extra-index-url to get CPU-only PyTorch wheels:
+#   pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
+#
+# This keeps PyPI as the primary source (for transformers, TTS, etc.) while adding
+# PyTorch's CPU-only wheel repository for torch/torchaudio (~500MB smaller than CUDA versions).
+torch==2.1.2
+torchaudio==2.1.2
+
+# ── Transformers (pinned for TTS compatibility) ────────────────────────────────
+# Version 4.33.0 required - newer versions cause BeamSearchScorer import errors
+transformers==4.33.0
+
+# ── Core TTS Engine ────────────────────────────────────────────────────────────
+# Coqui TTS with XTTS-v2 voice cloning model
+TTS==0.22.0
+
+# ── API Framework ──────────────────────────────────────────────────────────────
+fastapi==0.111.0
+uvicorn[standard]==0.30.1
+pydantic==2.8.2
+pydantic-settings==2.3.4
+
+# ── Audio Processing ───────────────────────────────────────────────────────────
+pydub==0.25.1           # Audio concatenation and MP3 encoding
+soundfile==0.12.1       # WAV I/O (used internally by XTTS-v2)
+
+# ── Google Cloud Storage ───────────────────────────────────────────────────────
+google-cloud-storage==2.16.0
+google-auth==2.29.0
+
+# ── HTTP Client ────────────────────────────────────────────────────────────────
+httpx==0.27.0           # Async HTTP for n8n callbacks
+
+# ── Redis (Job State Persistence) ──────────────────────────────────────────────
+redis==5.0.1            # Redis client for persistent job storage
+
+# ── Utilities ──────────────────────────────────────────────────────────────────
+python-multipart==0.0.9 # Required for FastAPI file uploads
+typing-extensions==4.11.0
+setuptools==69.5.1      # Required for pkg_resources (used by librosa)
+
+# ── Additional TTS Dependencies (auto-installed but pinned for stability) ──────
+numpy==1.24.4           # TTS requires numpy<2.0
+scipy==1.11.4
+librosa==0.10.1
+numba==0.58.1
+inflect==7.0.0
+anyascii==0.3.2
+gruut[de,es,fr]==2.2.3
+bangla==0.0.2
+bnnumerizer==0.0.2
+bnunicodenormalizer==0.1.6
