@@ -65,6 +65,8 @@ services:
       - N8N_BASIC_AUTH_USER=${N8N_USER}
       - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD}
       - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      # Disable secure cookie for HTTP access (set to true if using HTTPS)
+      - N8N_SECURE_COOKIE=false
       # Server configuration
       - WEBHOOK_URL=http://${SERVER_EXTERNAL_IP}:5678/
       - N8N_HOST=0.0.0.0
