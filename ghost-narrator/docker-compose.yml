@@ -67,6 +67,8 @@ services:
       - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
       # Disable secure cookie for HTTP access (set to true if using HTTPS)
       - N8N_SECURE_COOKIE=false
+      # Allow env var access in workflow expressions
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
       # Server configuration
       - WEBHOOK_URL=http://${SERVER_EXTERNAL_IP}:5678/
       - N8N_HOST=0.0.0.0
