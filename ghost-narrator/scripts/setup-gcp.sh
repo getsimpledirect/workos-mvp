@@ -151,17 +151,89 @@ echo "  ✓ Secret Manager accessor granted"
 
 # ─── Attach Service Account to VM ────────────────────────────────────────────
 
-echo "▶ Attaching Service Account to VM ${VM_NAME}..."
-gcloud compute instances set-service-account "${VM_NAME}" \
-    --zone="${VM_ZONE}" \
-    --service-account="${SA_EMAIL}" \
-    --scopes="cloud-platform" \
-    --project="${PROJECT_ID}"
-echo "  ✓ Service account attached to VM"
-echo ""
-echo "  ⚠  VM may require a restart to pick up the new SA:"
-echo "     gcloud compute instances stop  ${VM_NAME} --zone=${VM_ZONE}"
-echo "     gcloud compute instances start ${VM_NAME} --zone=${VM_ZONE}"
+echo "▶ Checking VM ${VM_NAME} status..."
+
+# Check if VM exists
+if ! gcloud compute instances describe "${VM_NAME}" \
+        --zone="${VM_ZONE}" \
+        --project="${PROJECT_ID}" &>/dev/null; then
+    echo "  ⚠ VM ${VM_NAME} not found in zone ${VM_ZONE}"
+    echo "  Skipping service account attachment."
+    echo "  You can manually attach the service account later when the VM exists."
+else
+    # Get VM status
+    VM_STATUS=$(gcloud compute instances describe "${VM_NAME}" \
+        --zone="${VM_ZONE}" \
+        --project="${PROJECT_ID}" \
+        --format="value(status)")
+
+    echo "  VM Status: ${VM_STATUS}"
+
+    if [ "${VM_STATUS}" = "RUNNING" ]; then
+        echo ""
+        echo "  ⚠ The VM must be stopped to change its service account."
+        read -r -p "  Stop the VM, attach service account, and restart? [Y/n]: " stop_confirm
+        stop_confirm="${stop_confirm:-Y}"
+
+        if [[ "${stop_confirm}" =~ ^[Yy]$ ]]; then
+            echo "  ▶ Stopping VM ${VM_NAME}..."
+            gcloud compute instances stop "${VM_NAME}" \
+                --zone="${VM_ZONE}" \
+                --project="${PROJECT_ID}" \
+                --quiet
+            echo "  ✓ VM stopped"
+
+            echo "  ▶ Attaching Service Account to VM..."
+            gcloud compute instances set-service-account "${VM_NAME}" \
+                --zone="${VM_ZONE}" \
+                --service-account="${SA_EMAIL}" \
+                --scopes="cloud-platform" \
+                --project="${PROJECT_ID}"
+            echo "  ✓ Service account attached"
+
+            echo "  ▶ Starting VM ${VM_NAME}..."
+            gcloud compute instances start "${VM_NAME}" \
+                --zone="${VM_ZONE}" \
+                --project="${PROJECT_ID}" \
+                --quiet
+            echo "  ✓ VM started"
+        else
+            echo "  Skipping service account attachment."
+            echo "  You can manually attach it later by running:"
+            echo ""
+            echo "    gcloud compute instances stop ${VM_NAME} --zone=${VM_ZONE} --project=${PROJECT_ID}"
+            echo "    gcloud compute instances set-service-account ${VM_NAME} \\"
+            echo "        --zone=${VM_ZONE} \\"
+            echo "        --service-account=${SA_EMAIL} \\"
+            echo "        --scopes=cloud-platform \\"
+            echo "        --project=${PROJECT_ID}"
+            echo "    gcloud compute instances start ${VM_NAME} --zone=${VM_ZONE} --project=${PROJECT_ID}"
+        fi
+    elif [ "${VM_STATUS}" = "TERMINATED" ] || [ "${VM_STATUS}" = "STOPPED" ]; then
+        echo "  ▶ Attaching Service Account to VM ${VM_NAME}..."
+        gcloud compute instances set-service-account "${VM_NAME}" \
+            --zone="${VM_ZONE}" \
+            --service-account="${SA_EMAIL}" \
+            --scopes="cloud-platform" \
+            --project="${PROJECT_ID}"
+        echo "  ✓ Service account attached"
+
+        read -r -p "  Start the VM now? [Y/n]: " start_confirm
+        start_confirm="${start_confirm:-Y}"
+        if [[ "${start_confirm}" =~ ^[Yy]$ ]]; then
+            echo "  ▶ Starting VM ${VM_NAME}..."
+            gcloud compute instances start "${VM_NAME}" \
+                --zone="${VM_ZONE}" \
+                --project="${PROJECT_ID}" \
+                --quiet
+            echo "  ✓ VM started"
+        fi
+    else
+        echo "  ⚠ VM is in state '${VM_STATUS}'. Cannot attach service account now."
+        echo "  Please wait for the VM to reach a stable state and try again."
+    fi
+fi
+
 echo ""
 
 # ─── Store secrets in Secret Manager ─────────────────────────────────────────
@@ -220,7 +292,7 @@ echo "  VM       : ${VM_NAME} (${VM_ZONE})"
 echo "  SA Email : ${SA_EMAIL}"
 echo ""
 echo "Next steps:"
-echo "  1. Restart the VM to activate the new Service Account"
+echo "  1. SSH into the VM: gcloud compute ssh ${VM_NAME} --zone=${VM_ZONE} --project=${PROJECT_ID}"
 echo "  2. Run ./scripts/init.sh on the VM to start the services"
 echo "  3. Configure Ghost webhooks → http://<VM-IP>:5678/webhook/ghost-published"
 echo "  4. Import n8n/workflows/ghost-audio-pipeline.json into n8n"
