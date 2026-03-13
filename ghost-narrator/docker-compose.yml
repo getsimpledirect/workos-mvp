@@ -109,6 +109,8 @@ services:
       - MAX_CHUNK_WORDS=200
       - DEVICE=${TTS_DEVICE:-cpu}
       - MAX_WORKERS=${MAX_WORKERS:-4}
+      # Auto-accept Coqui XTTS license (CPML for non-commercial use)
+      - COQUI_TOS_AGREED=1
       # Google Cloud Storage
       - GCS_BUCKET_NAME=${GCS_BUCKET_NAME:-}
       - GCS_AUDIO_PREFIX=${GCS_AUDIO_PREFIX:-audio/articles}
