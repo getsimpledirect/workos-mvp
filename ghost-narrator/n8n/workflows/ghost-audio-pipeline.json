@@ -1,533 +1,284 @@
 {
-  "name": "Ghost Article → Audio Pipeline (v3)",
+  "name": "Ghost Article → Audio Pipeline",
   "nodes": [
     {
-      "id": "node-webhook-ghost",
+      "id": "webhook-ghost",
       "name": "Ghost: Post Published",
       "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2,
+      "typeVersion": 1.1,
       "position": [0, 300],
+      "webhookId": "ghost-published",
       "parameters": {
         "httpMethod": "POST",
         "path": "ghost-published",
-        "responseMode": "responseNode",
-        "options": {}
-      },
-      "notes": "Configure Ghost Admin > Integrations > Webhooks\nURL: http://<YOUR_VM_IP>:5678/webhook/ghost-published\nEvent: Post published\nDo the SAME for your second Ghost site."
+        "responseMode": "onReceived",
+        "responseData": "allEntries"
+      }
     },
-
     {
-      "id": "node-respond-accepted",
-      "name": "Respond: Accepted",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [220, 200],
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ { \"status\": \"accepted\", \"message\": \"Article queued for audio generation\", \"slug\": $json.post?.current?.slug } }}",
-        "options": {
-          "responseCode": 202
-        }
-      },
-      "notes": "Immediately acknowledge the webhook so Ghost doesn't timeout.\nThe actual processing continues asynchronously below."
-    },
-
-    {
-      "id": "node-extract-post-meta",
+      "id": "extract-metadata",
       "name": "Extract Post Metadata",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [220, 400],
+      "position": [250, 300],
       "parameters": {
-        "jsCode": "/**\n * Extract and validate Ghost webhook payload.\n * \n * Ghost sends: { post: { current: { id, slug, title, url, status, ... } } }\n */\nconst post = $input.first().json.post?.current;\n\nif (!post || !post.id) {\n  throw new Error('Ghost webhook payload missing post.current.id');\n}\n\n// Only process published posts\nif (post.status !== 'published') {\n  return [{ json: { skip: true, reason: `Post status is '${post.status}', not 'published'` } }];\n}\n\n// Derive site info from post URL\nconst postUrl = new URL(post.url);\nconst siteBase = postUrl.origin;\nconst siteSlug = postUrl.hostname.split('.')[0];\n\n// Build unique job ID\nconst jobId = `${siteSlug}-${post.slug}`;\n\nreturn [{\n  json: {\n    skip: false,\n    postId: post.id,\n    postSlug: post.slug,\n    postTitle: post.title,\n    postUrl: post.url,\n    siteBase,\n    siteSlug,\n    jobId,\n    timestamp: new Date().toISOString(),\n  }\n}];"
+        "jsCode": "// Extract Ghost webhook payload\nconst data = $input.first().json;\nconst post = data.body?.post?.current || data.post?.current;\n\nif (!post || !post.id) {\n  console.log('Received data:', JSON.stringify(data, null, 2));\n  throw new Error('Ghost webhook payload missing post.current.id');\n}\n\n// Only process published posts\nif (post.status !== 'published') {\n  return [{ json: { skip: true, reason: `Post status is '${post.status}'` } }];\n}\n\n// Parse URL manually (n8n doesn't have URL constructor)\nconst urlMatch = post.url.match(/^(https?:\\/\\/[^\\/]+)/);\nconst siteBase = urlMatch ? urlMatch[1] : '';\nconst hostnameMatch = post.url.match(/^https?:\\/\\/([^\\/]+)/);\nconst hostname = hostnameMatch ? hostnameMatch[1] : '';\nconst siteSlug = hostname.split('.')[0];\nconst jobId = `${siteSlug}-${post.slug}`;\n\nreturn [{\n  json: {\n    skip: false,\n    postId: post.id,\n    postSlug: post.slug,\n    postTitle: post.title,\n    postUrl: post.url,\n    siteBase,\n    siteSlug,\n    jobId,\n    timestamp: new Date().toISOString()\n  }\n}];"
       }
     },
-
     {
-      "id": "node-skip-check",
+      "id": "check-skip",
       "name": "Should Process?",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [440, 400],
+      "typeVersion": 2.1,
+      "position": [500, 300],
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": false },
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
           "conditions": [
             {
-              "id": "cond-not-skip",
+              "id": "condition-skip",
               "leftValue": "={{ $json.skip }}",
               "rightValue": false,
-              "operator": { "type": "boolean", "operation": "equals" }
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
             }
-          ]
+          ],
+          "combinator": "and"
         }
-      },
-      "notes": "Skip processing if post is not published (draft, scheduled, etc.)"
+      }
     },
-
     {
-      "id": "node-skipped",
-      "name": "Skipped — Not Published",
+      "id": "log-skipped",
+      "name": "Log Skipped",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [660, 550],
+      "position": [750, 450],
       "parameters": {
-        "jsCode": "const data = $input.first().json;\nconsole.log(`⏭ Skipped: ${data.reason}`);\nreturn [{ json: { skipped: true, reason: data.reason } }];"
+        "jsCode": "console.log('Skipped:', $input.first().json.reason);\nreturn $input.all();"
       }
     },
-
     {
-      "id": "node-check-tts-health",
-      "name": "Check TTS Service Health",
+      "id": "fetch-article",
+      "name": "Fetch Full Article",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [660, 300],
+      "position": [750, 200],
       "parameters": {
         "method": "GET",
-        "url": "={{ $env.TTS_SERVICE_URL }}/health/ready",
-        "options": {
-          "timeout": 10000,
-          "retry": {
-            "enabled": true,
-            "maxTries": 3,
-            "waitBetweenTries": 2000
-          }
-        }
-      },
-      "notes": "Verify TTS service is ready before proceeding."
-    },
-
-    {
-      "id": "node-validate-tts-ready",
-      "name": "TTS Ready?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [880, 300],
-      "parameters": {
-        "conditions": {
-          "options": { "caseSensitive": false },
-          "conditions": [
-            {
-              "id": "cond-ready",
-              "leftValue": "={{ $json.ready }}",
-              "rightValue": true,
-              "operator": { "type": "boolean", "operation": "equals" }
-            }
-          ]
-        }
-      }
-    },
-
-    {
-      "id": "node-tts-not-ready",
-      "name": "TTS Not Ready — Abort",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [1100, 450],
-      "parameters": {
-        "jsCode": "const healthResponse = $input.first().json;\nconst origData = $('Extract Post Metadata').first().json;\n\nconsole.error(`✗ TTS service not ready for \"${origData.postTitle}\": ${healthResponse.reason || 'Unknown reason'}`);\n\nthrow new Error(`TTS service not ready: ${healthResponse.reason || 'Service unavailable'}`);"
-      }
-    },
-
-    {
-      "id": "node-get-ghost-content",
-      "name": "Fetch Full Article (Ghost Content API)",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [1100, 200],
-      "parameters": {
-        "method": "GET",
-        "url": "={{ $('Extract Post Metadata').first().json.siteBase }}/ghost/api/content/posts/{{ $('Extract Post Metadata').first().json.postId }}/",
+        "url": "={{ $json.siteBase }}/ghost/api/content/posts/{{ $json.postSlug }}/",
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
             {
               "name": "key",
-              "value": "={{ $('Extract Post Metadata').first().json.siteSlug === 'founderreality' ? $vars.GHOST_KEY_SITE1 : $vars.GHOST_KEY_SITE2 }}"
+              "value": "={{ $json.siteSlug === 'site1' ? $env.GHOST_KEY_SITE1 : $env.GHOST_KEY_SITE2 }}"
             },
             {
               "name": "formats",
               "value": "plaintext"
-            },
-            {
-              "name": "fields",
-              "value": "id,slug,title,plaintext,reading_time,published_at,feature_image"
             }
           ]
         },
         "options": {
-          "timeout": 30000,
-          "retry": {
-            "enabled": true,
-            "maxTries": 2,
-            "waitBetweenTries": 3000
-          }
+          "timeout": 30000
         }
-      },
-      "notes": "Ghost Content API returns `plaintext` — pre-stripped clean text.\nAPI keys are stored in n8n > Settings > Variables.\nCreate variables GHOST_KEY_SITE1 and GHOST_KEY_SITE2 in the n8n UI."
-    },
-
-    {
-      "id": "node-clean-text",
-      "name": "Clean & Prepare Article Text",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [1340, 200],
-      "parameters": {
-        "jsCode": "/**\n * Clean article text before LLM processing.\n */\nconst post = $input.first().json.posts?.[0];\nconst prevData = $('Extract Post Metadata').first().json;\n\nif (!post) {\n  throw new Error('Ghost Content API returned no posts');\n}\n\nlet text = post.plaintext || '';\n\n// Remove bare URLs\ntext = text.replace(/^https?:\\/\\/\\S+$/gm, '');\n\n// Remove markdown headers\ntext = text.replace(/^#{1,6}\\s+/gm, '');\n\n// Decode HTML entities\ntext = text\n  .replace(/&amp;/g, '&')\n  .replace(/&lt;/g, '<')\n  .replace(/&gt;/g, '>')\n  .replace(/&nbsp;/g, ' ')\n  .replace(/&quot;/g, '\"')\n  .replace(/&#39;/g, \"'\");\n\n// Collapse excessive blank lines\ntext = text.replace(/\\n{3,}/g, '\\n\\n').trim();\n\nconst wordCount = text.split(/\\s+/).filter(w => w.length > 0).length;\n\nif (!text || wordCount < 50) {\n  throw new Error(`Article text too short (${wordCount} words) for post '${post.slug}'`);\n}\n\nreturn [{\n  json: {\n    ...prevData,\n    rawText: text,\n    wordCount,\n    readingTime: post.reading_time || Math.ceil(wordCount / 200),\n    publishedAt: post.published_at,\n    featureImage: post.feature_image,\n  }\n}];"
       }
     },
-
     {
-      "id": "node-llm-narration",
-      "name": "Convert to Narration Style (LLM)",
+      "id": "prepare-text",
+      "name": "Prepare Article Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1000, 200],
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nconst post = item.posts?.[0];\n\nif (!post) {\n  throw new Error('Could not fetch article from Ghost API');\n}\n\n// Clean up the plaintext\nlet text = post.plaintext || '';\ntext = text.replace(/\\n{3,}/g, '\\n\\n').trim();\n\n// Get metadata from previous node\nconst meta = $('Extract Post Metadata').first().json;\n\nreturn [{\n  json: {\n    jobId: meta.jobId,\n    siteSlug: meta.siteSlug,\n    postTitle: post.title,\n    postSlug: post.slug,\n    articleText: text,\n    wordCount: text.split(/\\s+/).length\n  }\n}];"
+      }
+    },
+    {
+      "id": "convert-narration",
+      "name": "Convert to Narration (LLM)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1580, 200],
+      "position": [1250, 200],
       "parameters": {
         "method": "POST",
-        "url": "={{ $env.VLLM_BASE_URL }}/v1/chat/completions",
+        "url": "={{ $env.VLLM_BASE_URL }}/chat/completions",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Content-Type", "value": "application/json" }
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
           ]
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"model\": \"{{ $env.VLLM_MODEL_NAME }}\",\n  \"temperature\": 0.3,\n  \"max_tokens\": 8192,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a professional audiobook narrator and writer. Your job is to convert written articles into natural spoken narrations.\\n\\nRULES:\\n- Remove ALL markdown formatting (headers, bullets, bold, italic, links)\\n- Convert bullet-point lists to smooth flowing prose using transitions like 'First...', 'Additionally...', 'Finally...'\\n- Replace subheadings with natural spoken transitions, e.g. instead of '## Why This Matters' say 'Now, why does this matter?'\\n- Remove parenthetical URLs and citations\\n- Expand abbreviations that sound odd when spoken aloud\\n- Add natural spoken connectors between sections for smooth flow\\n- Do NOT add any content not in the original\\n- Do NOT add an intro like 'Welcome to...' or outro like 'Thanks for listening'\\n- Output ONLY the narration text — no preamble, no commentary\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": {{ JSON.stringify($json.rawText) }}\n    }\n  ]\n}",
+        "jsonBody": "={\n  \"model\": \"{{ $env.VLLM_MODEL_NAME }}\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are converting a written article into a natural podcast narration script. Keep all facts and information intact. Write in a conversational but professional tone suitable for audio. Remove references to images, links, or visual elements. Start with a brief intro mentioning the title.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Convert this article to narration:\\n\\nTitle: {{ $json.postTitle }}\\n\\n{{ $json.articleText }}\"\n    }\n  ],\n  \"max_tokens\": 4096,\n  \"temperature\": 0.7\n}",
         "options": {
-          "timeout": 180000,
-          "retry": {
-            "enabled": true,
-            "maxTries": 2,
-            "waitBetweenTries": 5000
-          }
+          "timeout": 120000
         }
-      },
-      "notes": "Calls your vLLM instance to transform the article into spoken narration.\nTemperature 0.3 keeps it faithful to the original."
-    },
-
-    {
-      "id": "node-parse-narration",
-      "name": "Parse Narration Text",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [1820, 200],
-      "parameters": {
-        "jsCode": "/**\n * Extract narration text from LLM response.\n */\nconst llmResponse = $input.first().json;\nconst prevData = $('Clean & Prepare Article Text').first().json;\n\nconst narrationText = llmResponse?.choices?.[0]?.message?.content?.trim();\n\nif (!narrationText) {\n  throw new Error('LLM returned empty narration text');\n}\n\n// Clean residual markdown\nconst cleaned = narrationText\n  .replace(/\\*{1,3}(.*?)\\*{1,3}/g, '$1')\n  .replace(/^#{1,6}\\s+/gm, '')\n  .replace(/\\[([^\\]]+)\\]\\([^)]+\\)/g, '$1')\n  .replace(/<[^>]+>/g, '')\n  .trim();\n\nconst narrationWordCount = cleaned.split(/\\s+/).filter(w => w.length > 0).length;\nconst estimatedDurationMinutes = Math.ceil(narrationWordCount / 150);\n\nreturn [{\n  json: {\n    ...prevData,\n    narrationText: cleaned,\n    narrationWordCount,\n    estimatedDurationMinutes,\n  }\n}];"
       }
     },
-
     {
-      "id": "node-submit-tts",
+      "id": "parse-narration",
+      "name": "Parse Narration",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1500, 200],
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst narration = response.choices?.[0]?.message?.content || '';\n\nif (!narration) {\n  throw new Error('LLM returned empty narration');\n}\n\n// Get context from previous nodes\nconst meta = $('Prepare Article Text').first().json;\n\nreturn [{\n  json: {\n    jobId: meta.jobId,\n    siteSlug: meta.siteSlug,\n    postTitle: meta.postTitle,\n    postSlug: meta.postSlug,\n    narrationText: narration.trim(),\n    wordCount: narration.split(/\\s+/).length\n  }\n}];"
+      }
+    },
+    {
+      "id": "submit-tts",
       "name": "Submit TTS Job",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [2060, 200],
+      "position": [1750, 200],
       "parameters": {
         "method": "POST",
-        "url": "={{ $env.TTS_SERVICE_URL }}/tts/generate",
+        "url": "http://tts-service:8020/synthesize",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Content-Type", "value": "application/json" }
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
           ]
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"text\": {{ JSON.stringify($json.narrationText) }},\n  \"job_id\": {{ JSON.stringify($json.jobId) }},\n  \"site_slug\": {{ JSON.stringify($json.siteSlug) }},\n  \"gcs_path\": \"audio/articles/{{ $json.siteSlug }}/{{ new Date().getFullYear() }}/{{ String(new Date().getMonth() + 1).padStart(2, '0') }}/{{ $json.postSlug }}.mp3\"\n}",
+        "jsonBody": "={\n  \"text\": {{ JSON.stringify($json.narrationText) }},\n  \"job_id\": \"{{ $json.jobId }}\",\n  \"site_slug\": \"{{ $json.siteSlug }}\",\n  \"upload_to_gcs\": true\n}",
         "options": {
-          "timeout": 30000,
-          "retry": {
-            "enabled": true,
-            "maxTries": 2,
-            "waitBetweenTries": 3000
-          }
+          "timeout": 600000
         }
-      },
-      "notes": "POSTs to the TTS service. Returns 202 + job_id immediately.\nGCS path: audio/articles/{site}/{year}/{month}/{slug}.mp3"
-    },
-
-    {
-      "id": "node-prepare-polling",
-      "name": "Prepare Polling Context",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [2300, 200],
-      "parameters": {
-        "jsCode": "/**\n * Store all context needed for polling and final result.\n * This data persists through the retry loop.\n */\nconst ttsResponse = $input.first().json;\nconst articleData = $('Parse Narration Text').first().json;\n\nreturn [{\n  json: {\n    // Essential polling data\n    jobId: ttsResponse.job_id,\n    \n    // Article metadata for final result\n    postTitle: articleData.postTitle,\n    postSlug: articleData.postSlug,\n    postUrl: articleData.postUrl,\n    siteSlug: articleData.siteSlug,\n    wordCount: articleData.wordCount,\n    narrationWordCount: articleData.narrationWordCount,\n    estimatedDurationMinutes: articleData.estimatedDurationMinutes,\n    \n    // Tracking\n    submittedAt: new Date().toISOString(),\n    retryCount: 0,\n    maxRetries: 30,\n  }\n}];"
       }
     },
-
     {
-      "id": "node-wait-initial",
-      "name": "Wait (Initial)",
-      "type": "n8n-nodes-base.wait",
-      "typeVersion": 1.1,
-      "position": [2540, 200],
-      "parameters": {
-        "resume": "timeInterval",
-        "unit": "minutes",
-        "amount": 2
-      },
-      "notes": "Wait 2 minutes before first status check.\nWait nodes pass through their input data unchanged."
-    },
-
-    {
-      "id": "node-check-status",
-      "name": "Check TTS Status",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [2780, 200],
-      "parameters": {
-        "method": "GET",
-        "url": "={{ $env.TTS_SERVICE_URL }}/tts/status/{{ $json.jobId }}",
-        "options": {
-          "timeout": 15000,
-          "retry": {
-            "enabled": true,
-            "maxTries": 2,
-            "waitBetweenTries": 2000
-          }
-        }
-      },
-      "notes": "Poll TTS service for job status. URL uses jobId from input data."
-    },
-
-    {
-      "id": "node-evaluate-status",
-      "name": "Evaluate Status & Context",
+      "id": "log-result",
+      "name": "Log Result",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [3020, 200],
+      "position": [2000, 200],
       "parameters": {
-        "jsCode": "/**\n * Evaluate TTS status and prepare routing decision.\n * \n * Context Strategy:\n * - Always get base context from 'Prepare Polling Context' (runs once at start)\n * - Track retries using workflow execution start time vs current time\n * - This avoids n8n's limitation with referencing loop iteration data\n */\nconst statusResponse = $input.first().json;\n\n// Get original context from Prepare Polling Context (always available)\nconst context = $('Prepare Polling Context').first().json;\n\nif (!context || !context.jobId) {\n  throw new Error('Lost polling context - cannot continue');\n}\n\n// Calculate retry count based on elapsed time\n// Initial wait: 2 min, Retry wait: 45 sec\nconst submittedAt = new Date(context.submittedAt).getTime();\nconst elapsedMs = Date.now() - submittedAt;\nconst initialWaitMs = 2 * 60 * 1000; // 2 minutes\nconst retryWaitMs = 45 * 1000; // 45 seconds\n\nlet estimatedRetryCount = 1;\nif (elapsedMs > initialWaitMs) {\n  estimatedRetryCount = 1 + Math.floor((elapsedMs - initialWaitMs) / retryWaitMs);\n}\n\nconst maxRetries = context.maxRetries || 30;\n\n// Determine routing based on status\nlet route = 'retry';\nif (statusResponse.status === 'completed') {\n  route = 'completed';\n} else if (statusResponse.status === 'failed') {\n  route = 'failed';\n} else if (estimatedRetryCount >= maxRetries) {\n  route = 'timeout';\n}\n\nreturn [{\n  json: {\n    // Routing decision\n    route,\n    \n    // Context data (from original submission)\n    jobId: context.jobId,\n    postTitle: context.postTitle,\n    postSlug: context.postSlug,\n    postUrl: context.postUrl,\n    siteSlug: context.siteSlug,\n    wordCount: context.wordCount,\n    narrationWordCount: context.narrationWordCount,\n    estimatedDurationMinutes: context.estimatedDurationMinutes,\n    submittedAt: context.submittedAt,\n    maxRetries: maxRetries,\n    retryCount: estimatedRetryCount,\n    elapsedSeconds: Math.round(elapsedMs / 1000),\n    \n    // Status response from TTS service\n    status: statusResponse.status,\n    job_id: statusResponse.job_id,\n    gcs_uri: statusResponse.gcs_uri,\n    local_path: statusResponse.local_path,\n    error: statusResponse.error,\n    duration_seconds: statusResponse.duration_seconds,\n    completed_at: statusResponse.completed_at,\n  }\n}];"
-      },
-      "notes": "Evaluates status and determines routing.\nUses time-based retry counting to work around n8n loop limitations."
-    },
-
-    {
-      "id": "node-status-switch",
-      "name": "Route by Status",
-      "type": "n8n-nodes-base.switch",
-      "typeVersion": 3,
-      "position": [3260, 200],
-      "parameters": {
-        "rules": {
-          "values": [
-            {
-              "outputKey": "completed",
-              "conditions": {
-                "options": { "caseSensitive": false },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $json.route }}",
-                    "rightValue": "completed",
-                    "operator": { "type": "string", "operation": "equals" }
-                  }
-                ]
-              }
-            },
-            {
-              "outputKey": "failed",
-              "conditions": {
-                "options": { "caseSensitive": false },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $json.route }}",
-                    "rightValue": "failed",
-                    "operator": { "type": "string", "operation": "equals" }
-                  }
-                ]
-              }
-            },
-            {
-              "outputKey": "timeout",
-              "conditions": {
-                "options": { "caseSensitive": false },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $json.route }}",
-                    "rightValue": "timeout",
-                    "operator": { "type": "string", "operation": "equals" }
-                  }
-                ]
-              }
-            }
-          ],
-          "fallbackOutput": "retry"
-        },
-        "options": {}
-      },
-      "notes": "Route based on route field from Evaluate node:\n- completed → Success\n- failed → Error logging\n- timeout → Max retries exceeded\n- default → Continue polling"
-    },
-
-    {
-      "id": "node-wait-retry",
-      "name": "Wait (Retry)",
-      "type": "n8n-nodes-base.wait",
-      "typeVersion": 1.1,
-      "position": [3500, 400],
-      "parameters": {
-        "resume": "timeInterval",
-        "unit": "seconds",
-        "amount": 45
-      },
-      "notes": "Wait 45 seconds between retries.\nWith maxRetries=30 and 2 min initial wait, allows ~25 minutes total.\nNote: Data passed through is not used for context (we reference Prepare Polling Context directly)."
-    },
-
-    {
-      "id": "node-success",
-      "name": "Audio Ready — Success",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [3500, 50],
-      "parameters": {
-        "jsCode": "/**\n * Job completed successfully!\n */\nconst data = $input.first().json;\n\nconst result = {\n  success: true,\n  message: 'Audio generation complete',\n  postTitle: data.postTitle,\n  postSlug: data.postSlug,\n  postUrl: data.postUrl,\n  siteSlug: data.siteSlug,\n  gcsUri: data.gcs_uri,\n  localPath: data.local_path,\n  jobId: data.jobId,\n  submittedAt: data.submittedAt,\n  completedAt: data.completed_at ? new Date(data.completed_at * 1000).toISOString() : new Date().toISOString(),\n  processingDurationSeconds: data.duration_seconds,\n  originalWordCount: data.wordCount,\n  narrationWordCount: data.narrationWordCount,\n  estimatedAudioMinutes: data.estimatedDurationMinutes,\n  pollRetries: data.retryCount,\n};\n\nconsole.log(`✓ Audio ready for \"${data.postTitle}\"`);\nconsole.log(`  GCS URI: ${data.gcs_uri}`);\nconsole.log(`  Processing: ${data.duration_seconds?.toFixed(1)}s`);\nconsole.log(`  Poll retries: ${data.retryCount}`);\n\nreturn [{ json: result }];"
+        "jsCode": "const result = $input.first().json;\nconsole.log('TTS Job submitted:', result);\nreturn [{ json: { success: true, ...result } }];"
       }
-    },
-
-    {
-      "id": "node-failed",
-      "name": "TTS Failed — Error",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [3500, 180],
-      "parameters": {
-        "jsCode": "/**\n * TTS job failed.\n */\nconst data = $input.first().json;\n\nconst result = {\n  success: false,\n  message: 'TTS job failed',\n  postTitle: data.postTitle,\n  postSlug: data.postSlug,\n  postUrl: data.postUrl,\n  siteSlug: data.siteSlug,\n  jobId: data.jobId,\n  error: data.error || 'Unknown error',\n  submittedAt: data.submittedAt,\n  failedAt: new Date().toISOString(),\n  retryCount: data.retryCount,\n};\n\nconsole.error(`✗ TTS failed for \"${data.postTitle}\": ${data.error}`);\nconsole.error(`  Job ID: ${data.jobId}`);\n\nreturn [{ json: result }];"
-      }
-    },
-
-    {
-      "id": "node-timeout",
-      "name": "Max Retries — Timeout",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [3500, 300],
-      "parameters": {
-        "jsCode": "/**\n * Job exceeded maximum retry attempts.\n */\nconst data = $input.first().json;\n\nconst result = {\n  success: false,\n  message: 'TTS job timed out (max retries exceeded)',\n  postTitle: data.postTitle,\n  postSlug: data.postSlug,\n  postUrl: data.postUrl,\n  siteSlug: data.siteSlug,\n  jobId: data.jobId,\n  lastStatus: data.status,\n  retryCount: data.retryCount,\n  maxRetries: data.maxRetries,\n  submittedAt: data.submittedAt,\n  timedOutAt: new Date().toISOString(),\n};\n\nconsole.error(`✗ TTS timed out for \"${data.postTitle}\" after ${data.retryCount} retries`);\nconsole.error(`  Job ID: ${data.jobId}`);\nconsole.error(`  Last status: ${data.status}`);\n\nreturn [{ json: result }];"
-      }
-    },
-
-    {
-      "id": "node-webhook-callback",
-      "name": "TTS Callback (Optional)",
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2,
-      "position": [2780, 500],
-      "parameters": {
-        "httpMethod": "POST",
-        "path": "tts-callback",
-        "responseMode": "responseNode",
-        "options": {}
-      },
-      "notes": "ALTERNATIVE TO POLLING: Set N8N_CALLBACK_URL in TTS service.\nThis webhook receives job completion notifications.\nCreate a separate workflow for callback-based processing."
     }
   ],
-
   "connections": {
     "Ghost: Post Published": {
       "main": [
         [
-          { "node": "Respond: Accepted", "type": "main", "index": 0 },
-          { "node": "Extract Post Metadata", "type": "main", "index": 0 }
+          {
+            "node": "Extract Post Metadata",
+            "type": "main",
+            "index": 0
+          }
         ]
       ]
     },
     "Extract Post Metadata": {
-      "main": [[{ "node": "Should Process?", "type": "main", "index": 0 }]]
-    },
-    "Should Process?": {
-      "main": [
-        [{ "node": "Check TTS Service Health", "type": "main", "index": 0 }],
-        [{ "node": "Skipped — Not Published", "type": "main", "index": 0 }]
-      ]
-    },
-    "Check TTS Service Health": {
-      "main": [[{ "node": "TTS Ready?", "type": "main", "index": 0 }]]
-    },
-    "TTS Ready?": {
       "main": [
         [
           {
-            "node": "Fetch Full Article (Ghost Content API)",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [{ "node": "TTS Not Ready — Abort", "type": "main", "index": 0 }]
-      ]
-    },
-    "Fetch Full Article (Ghost Content API)": {
-      "main": [
-        [{ "node": "Clean & Prepare Article Text", "type": "main", "index": 0 }]
-      ]
-    },
-    "Clean & Prepare Article Text": {
-      "main": [
-        [
-          {
-            "node": "Convert to Narration Style (LLM)",
+            "node": "Should Process?",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Convert to Narration Style (LLM)": {
-      "main": [[{ "node": "Parse Narration Text", "type": "main", "index": 0 }]]
+    "Should Process?": {
+      "main": [
+        [
+          {
+            "node": "Fetch Full Article",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Skipped",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
-    "Parse Narration Text": {
-      "main": [[{ "node": "Submit TTS Job", "type": "main", "index": 0 }]]
+    "Fetch Full Article": {
+      "main": [
+        [
+          {
+            "node": "Prepare Article Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Article Text": {
+      "main": [
+        [
+          {
+            "node": "Convert to Narration (LLM)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to Narration (LLM)": {
+      "main": [
+        [
+          {
+            "node": "Parse Narration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Narration": {
+      "main": [
+        [
+          {
+            "node": "Submit TTS Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Submit TTS Job": {
       "main": [
-        [{ "node": "Prepare Polling Context", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Log Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
-    },
-    "Prepare Polling Context": {
-      "main": [[{ "node": "Wait (Initial)", "type": "main", "index": 0 }]]
-    },
-    "Wait (Initial)": {
-      "main": [[{ "node": "Check TTS Status", "type": "main", "index": 0 }]]
-    },
-    "Check TTS Status": {
-      "main": [
-        [{ "node": "Evaluate Status & Context", "type": "main", "index": 0 }]
-      ]
-    },
-    "Evaluate Status & Context": {
-      "main": [[{ "node": "Route by Status", "type": "main", "index": 0 }]]
-    },
-    "Route by Status": {
-      "main": [
-        [{ "node": "Audio Ready — Success", "type": "main", "index": 0 }],
-        [{ "node": "TTS Failed — Error", "type": "main", "index": 0 }],
-        [{ "node": "Max Retries — Timeout", "type": "main", "index": 0 }],
-        [{ "node": "Wait (Retry)", "type": "main", "index": 0 }]
-      ]
-    },
-    "Wait (Retry)": {
-      "main": [[{ "node": "Check TTS Status", "type": "main", "index": 0 }]]
     }
   },
-
   "active": false,
   "settings": {
     "executionOrder": "v1",
     "saveManualExecutions": true,
     "saveDataSuccessExecution": "all",
-    "saveDataErrorExecution": "all",
-    "callerPolicy": "workflowsFromSameOwner",
-    "errorWorkflow": "",
-    "executionTimeout": 3600,
-    "maxRunTime": 3600
+    "saveDataErrorExecution": "all"
   },
-  "pinData": {},
-  "versionId": "3.1",
+  "versionId": "1",
   "meta": {
-    "templateCredsSetupCompleted": false,
-    "description": "v3.1 - Ghost Article → Audio Pipeline\n\nConverts Ghost blog posts to AI-narrated audio automatically.\n\nFeatures:\n- Immediate webhook response (202 Accepted)\n- TTS health check before processing\n- Skip non-published posts\n- Time-based retry tracking (~25 min timeout)\n- Switch-based status routing\n- Structured GCS paths: audio/articles/{site}/{year}/{month}/{slug}.mp3\n- Detailed logging\n\nPolling Loop:\n1. Prepare Polling Context stores all metadata at job submission\n2. Wait (Initial) delays 2 minutes before first check\n3. Check TTS Status polls the TTS service\n4. Evaluate node uses time-based retry counting (references original context)\n5. Route by Status determines: completed/failed/timeout/retry\n6. Wait (Retry) delays 45 seconds before next poll\n\nEnvironment Variables:\n- TTS_SERVICE_URL: e.g., http://tts-service:8020\n- VLLM_BASE_URL: e.g., http://vllm:8000\n- VLLM_MODEL_NAME: Model name\n\nn8n Variables (Settings > Variables):\n- GHOST_KEY_SITE1: Ghost Content API key for site 1\n- GHOST_KEY_SITE2: Ghost Content API key for site 2"
+    "instanceId": "ghost-narrator"
   }
 }
