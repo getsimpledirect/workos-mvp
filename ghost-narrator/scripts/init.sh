@@ -371,8 +371,8 @@ else
 
     echo ""
     echo "── vLLM Configuration (optional) ──"
-    VLLM_BASE_URL=$(prompt_value "vLLM Base URL" "http://host.docker.internal:8000")
-    VLLM_MODEL_NAME=$(prompt_value "vLLM Model Name" "Qwen/Qwen3-14B")
+    VLLM_BASE_URL=$(prompt_value "vLLM Base URL" "http://host.docker.internal:8001/v1")
+    VLLM_MODEL_NAME=$(prompt_value "vLLM Model Name" "Qwen/Qwen3-14B-AWQ")
 
     echo ""
     echo "── TTS Configuration (optional) ──"

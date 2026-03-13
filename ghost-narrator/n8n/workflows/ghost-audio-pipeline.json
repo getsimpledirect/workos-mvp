@@ -22,7 +22,7 @@
       "typeVersion": 2,
       "position": [250, 300],
       "parameters": {
-        "jsCode": "// Extract Ghost webhook payload\nconst data = $input.first().json;\nconst post = data.body?.post?.current || data.post?.current;\n\nif (!post || !post.id) {\n  console.log('Received data:', JSON.stringify(data, null, 2));\n  throw new Error('Ghost webhook payload missing post.current.id');\n}\n\n// Only process published posts\nif (post.status !== 'published') {\n  return [{ json: { skip: true, reason: `Post status is '${post.status}'` } }];\n}\n\n// Parse URL manually (n8n doesn't have URL constructor)\nconst urlMatch = post.url.match(/^(https?:\\/\\/[^\\/]+)/);\nconst siteBase = urlMatch ? urlMatch[1] : '';\nconst hostnameMatch = post.url.match(/^https?:\\/\\/([^\\/]+)/);\nconst hostname = hostnameMatch ? hostnameMatch[1] : '';\nconst siteSlug = hostname.split('.')[0];\nconst jobId = `${siteSlug}-${post.slug}`;\n\nreturn [{\n  json: {\n    skip: false,\n    postId: post.id,\n    postSlug: post.slug,\n    postTitle: post.title,\n    postUrl: post.url,\n    siteBase,\n    siteSlug,\n    jobId,\n    timestamp: new Date().toISOString()\n  }\n}];"
+        "jsCode": "// Extract Ghost webhook payload\nconst data = $input.first().json;\nconst post = data.body?.post?.current || data.post?.current;\n\nif (!post || !post.id) {\n  console.log('Received data:', JSON.stringify(data, null, 2));\n  throw new Error('Ghost webhook payload missing post.current.id');\n}\n\n// Only process published posts\nif (post.status !== 'published') {\n  return [{ json: { skip: true, reason: `Post status is '${post.status}'` } }];\n}\n\n// Parse URL manually (n8n doesn't have URL constructor)\nconst urlMatch = post.url.match(/^(https?:\\/\\/[^\\/]+)/);\nconst siteBase = urlMatch ? urlMatch[1] : '';\nconst hostnameMatch = post.url.match(/^https?:\\/\\/([^\\/]+)/);\nconst hostname = hostnameMatch ? hostnameMatch[1] : '';\n// Use full hostname to distinguish sites (ghost.founderreality.com vs ghost.getsimpledirect.com)\nconst siteSlug = hostname.replace(/\\./g, '-');\nconst jobId = `${siteSlug}-${post.slug}`;\n\nreturn [{\n  json: {\n    skip: false,\n    postId: post.id,\n    postSlug: post.slug,\n    postTitle: post.title,\n    postUrl: post.url,\n    siteBase,\n    siteSlug,\n    hostname,\n    jobId,\n    timestamp: new Date().toISOString()\n  }\n}];"
       }
     },
     {
@@ -77,7 +77,7 @@
           "parameters": [
             {
               "name": "key",
-              "value": "={{ $json.siteSlug === 'founderreality' ? $env.GHOST_KEY_SITE1 : $env.GHOST_KEY_SITE2 }}"
+              "value": "={{ $json.hostname.includes('founderreality') ? $env.GHOST_KEY_SITE1 : $env.GHOST_KEY_SITE2 }}"
             },
             {
               "name": "formats",
@@ -120,7 +120,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"model\": \"{{ $env.VLLM_MODEL_NAME }}\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are converting a written article into a natural podcast narration script. Keep all facts and information intact. Write in a conversational but professional tone suitable for audio. Remove references to images, links, or visual elements. Start with a brief intro mentioning the title.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Convert this article to narration:\\n\\nTitle: {{ $json.postTitle }}\\n\\n{{ $json.articleText }}\"\n    }\n  ],\n  \"max_tokens\": 4096,\n  \"temperature\": 0.7\n}",
+        "jsonBody": "={{ JSON.stringify({ model: $env.VLLM_MODEL_NAME, messages: [{ role: 'system', content: 'You are converting a written article into a natural podcast narration script. Keep all facts and information intact. Write in a conversational but professional tone suitable for audio. Remove references to images, links, or visual elements. Start with a brief intro mentioning the title.' }, { role: 'user', content: 'Convert this article to narration:\\n\\nTitle: ' + $json.postTitle + '\\n\\n' + $json.articleText }], max_tokens: 4096, temperature: 0.7 }) }}",
         "options": {
           "timeout": 120000
         }
