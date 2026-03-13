@@ -71,13 +71,13 @@
       "position": [750, 200],
       "parameters": {
         "method": "GET",
-        "url": "={{ $json.siteBase }}/ghost/api/content/posts/{{ $json.postSlug }}/",
+        "url": "={{ $json.siteBase }}/ghost/api/content/posts/slug/{{ $json.postSlug }}/",
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
             {
               "name": "key",
-              "value": "={{ $json.siteSlug === 'site1' ? $env.GHOST_KEY_SITE1 : $env.GHOST_KEY_SITE2 }}"
+              "value": "={{ $json.siteSlug === 'founderreality' ? $env.GHOST_KEY_SITE1 : $env.GHOST_KEY_SITE2 }}"
             },
             {
               "name": "formats",
