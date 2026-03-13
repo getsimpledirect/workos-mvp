@@ -63,11 +63,12 @@ Every time you publish a post on either of your Ghost websites, this pipeline au
              │
              │  Orchestration Flow
              │
-             │  ① Ghost Webhook → n8n (POST /webhook/ghost-published)
-             │  ② n8n → vLLM  (convert article to narration script)
-             │  ③ n8n → TTS   (synthesise MP3 with cloned voice)
-             │  ④ n8n → GCS   (upload MP3)
-             │  ⑤ n8n → Ghost (embed audio player in post) [optional]
+             │  ① Ghost Webhook → n8n Pipeline (POST /webhook/ghost-published)
+             │  ② n8n Pipeline → vLLM  (convert article to narration script)
+             │  ③ n8n Pipeline → TTS   (synthesise MP3 with cloned voice)
+             │  ④ TTS Service → GCS   (upload MP3)
+             │  ⑤ TTS Service → n8n Callback (POST /webhook/tts-callback)
+             │  ⑥ n8n Callback → Ghost (embed audio player in post via Admin API)
              │
              ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -274,7 +275,10 @@ ghost-audio-pipeline/
 │   └── reference.wav              # YOUR cloned voice sample (you provide this)
 │
 ├── n8n/
-│   └── ghost-audio-workflow.json  # Importable n8n workflow
+│   ├── SETUP_GUIDE.md             # Guide to setting up the n8n workflows
+│   └── workflows/
+│       ├── ghost-audio-pipeline.json  # Workflow 1: Triggers narration
+│       └── ghost-audio-callback.json  # Workflow 2: Embeds audio on completion
 │
 └── scripts/
     └── setup.sh                   # One-time setup script
@@ -533,61 +537,39 @@ The job runs asynchronously. Poll `/tts/status/{job_id}` until status is `comple
 
 **Timeout: 1,800,000ms (30 minutes)** — This seems extreme but a 10,000-word article on CPU can genuinely take 15–20 minutes to synthesise across 100+ chunks. Since the workflow is fully async, this is fine.
 
----
+### Node 7: Log Result (Code)
 
-### Node 7: Download Audio File (HTTP Request)
-
-Using the `download_url` from the previous step, downloads the MP3 as binary data. n8n stores binary files in memory and passes them between nodes.
-
-```
-GET http://tts-service:8020/tts/download/{job_id}
-Response format: file (binary, audio/mpeg)
-```
+Logs that the job has been successfully submitted and completes the first workflow.
 
 ---
 
-### Node 8: Build GCS Path (Code)
+## Workflow 2: The Callback Embedder
 
-Constructs the GCS object path:
-```javascript
-const gcsPath = `podcasts/${siteDomain}/${year}/${month}/${postSlug}.mp3`;
-// e.g.: podcasts/founderreality.com/2025/01/exit-strategy-article.mp3
-```
+### Node 1: TTS Job Completed (Webhook)
 
-Also builds the public URL that will be embedded in the Ghost post.
+Listens for `POST /webhook/tts-callback` from the TTS service.
 
----
+### Node 2: Check Status & Parse Job ID (Code)
 
-### Node 9: Upload to GCS (Google Cloud Storage)
+Verifies the status is `completed`, extracts the generated `gcs_uri`, converts it to a public URL, and parses the Ghost Post ID out of the job_id.
 
-n8n's built-in GCS node handles the upload. You just provide:
-- Bucket name (from env var)
-- File path (built in previous node)
-- Binary data (from the download node)
-- Content-Type: `audio/mpeg`
+### Node 3: Should Embed Audio? (IF)
 
-It also sets custom metadata on the GCS object so you can later query which articles have audio:
-```
-x-goog-meta-post-title: "Exit Strategy: How Location..."
-x-goog-meta-post-url: "https://founderreality.com/blog/..."
-```
+If the job failed or skipped, end here.
 
----
+### Node 4: Get Latest Post Content (HTTP Request)
 
-### Node 10: Build Audio Embed HTML (Code)
+Fetches the original article's HTML from the Ghost Admin API to prepare for injecting the audio player.
 
-Creates the HTML5 audio player widget:
-```html
-<div class="audio-narration" style="...">
-  <p>🎧 Listen to this article</p>
-  <audio controls>
-    <source src="https://storage.googleapis.com/..." type="audio/mpeg">
-  </audio>
-  <p>AI-narrated · 5 min · Auto-generated</p>
-</div>
-```
+### Node 5: Prepend Audio Player (Code)
 
-This gets prepended to the Ghost post's HTML content in the final step.
+Creates an HTML `<audio>` tag targeting the public GCS URL and prepends it to the article HTML.
+
+### Node 6: Update Ghost Post (HTTP Request)
+
+Uses `PUT /ghost/api/admin/posts/{id}/` to update the live article on Ghost with the newly injected audio player.
+
+─
 
 ---
 

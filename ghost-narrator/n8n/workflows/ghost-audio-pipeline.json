@@ -22,7 +22,7 @@
       "typeVersion": 2,
       "position": [250, 300],
       "parameters": {
-        "jsCode": "// Extract Ghost webhook payload\nconst data = $input.first().json;\nconst post = data.body?.post?.current || data.post?.current;\n\nif (!post || !post.id) {\n  console.log('Received data:', JSON.stringify(data, null, 2));\n  throw new Error('Ghost webhook payload missing post.current.id');\n}\n\n// Only process published posts\nif (post.status !== 'published') {\n  return [{ json: { skip: true, reason: `Post status is '${post.status}'` } }];\n}\n\n// Parse URL manually (n8n doesn't have URL constructor)\nconst urlMatch = post.url.match(/^(https?:\\/\\/[^\\/]+)/);\nconst siteBase = urlMatch ? urlMatch[1] : '';\nconst hostnameMatch = post.url.match(/^https?:\\/\\/([^\\/]+)/);\nconst hostname = hostnameMatch ? hostnameMatch[1] : '';\n// Use full hostname to distinguish sites (ghost.founderreality.com vs ghost.getsimpledirect.com)\nconst siteSlug = hostname.replace(/\\./g, '-');\nconst jobId = `${siteSlug}-${post.slug}`;\n\nreturn [{\n  json: {\n    skip: false,\n    postId: post.id,\n    postSlug: post.slug,\n    postTitle: post.title,\n    postUrl: post.url,\n    siteBase,\n    siteSlug,\n    hostname,\n    jobId,\n    timestamp: new Date().toISOString()\n  }\n}];"
+        "jsCode": "// Extract Ghost webhook payload\nconst data = $input.first().json;\nconst post = data.body?.post?.current || data.post?.current;\n\nif (!post || !post.id) {\n  console.log('Received data:', JSON.stringify(data, null, 2));\n  throw new Error('Ghost webhook payload missing post.current.id');\n}\n\n// Only process published posts\nif (post.status !== 'published') {\n  return [{ json: { skip: true, reason: `Post status is '${post.status}'` } }];\n}\n\n// Parse URL manually (n8n doesn't have URL constructor)\nconst urlMatch = post.url.match(/^(https?:\\/\\/[^\\/]+)/);\nconst siteBase = urlMatch ? urlMatch[1] : '';\nconst hostnameMatch = post.url.match(/^https?:\\/\\/([^\\/]+)/);\nconst hostname = hostnameMatch ? hostnameMatch[1] : '';\n// Use full hostname to distinguish sites (ghost.founderreality.com vs ghost.getsimpledirect.com)\nconst siteSlug = hostname.replace(/\\./g, '-');\nconst jobId = `${siteSlug}-${post.id}-${post.slug}`;\n\nreturn [{\n  json: {\n    skip: false,\n    postId: post.id,\n    postSlug: post.slug,\n    postTitle: post.title,\n    postUrl: post.url,\n    siteBase,\n    siteSlug,\n    hostname,\n    jobId,\n    timestamp: new Date().toISOString()\n  }\n}];"
       }
     },
     {
@@ -144,7 +144,7 @@
       "position": [1750, 200],
       "parameters": {
         "method": "POST",
-        "url": "http://tts-service:8020/synthesize",
+        "url": "={{ $env.TTS_SERVICE_URL }}/tts/generate",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -156,7 +156,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"text\": {{ JSON.stringify($json.narrationText) }},\n  \"job_id\": \"{{ $json.jobId }}\",\n  \"site_slug\": \"{{ $json.siteSlug }}\",\n  \"upload_to_gcs\": true\n}",
+        "jsonBody": "={{ JSON.stringify({ text: $json.narrationText, job_id: $json.jobId, site_slug: $json.siteSlug }) }}",
         "options": {
           "timeout": 600000
         }

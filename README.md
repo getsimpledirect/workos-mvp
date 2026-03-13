@@ -223,6 +223,8 @@ cp /path/to/your/voice.wav tts-service/voices/reference.wav
 | `GCS_BUCKET_NAME` | GCS bucket for audio storage |
 | `VLLM_BASE_URL` | URL to vLLM API |
 | `VLLM_MODEL_NAME` | Model name for vLLM |
+| `GHOST_SITE1_ADMIN_API_KEY` | Admin API key for Ghost site 1 |
+| `GHOST_SITE2_ADMIN_API_KEY` | Admin API key for Ghost site 2 |
 
 ### GCP Setup (Optional)
 
@@ -263,6 +265,8 @@ N8N_ENCRYPTION_KEY=<openssl rand -hex 32>
 GCS_BUCKET_NAME=your-gcs-bucket-name
 VLLM_BASE_URL=http://host.docker.internal:8000
 VLLM_MODEL_NAME=Qwen/Qwen3-14B
+GHOST_SITE1_ADMIN_API_KEY=your-admin-key-1
+GHOST_SITE2_ADMIN_API_KEY=your-admin-key-2
 TTS_DEVICE=cpu
 MAX_WORKERS=4
 TIMEZONE=UTC
@@ -390,7 +394,8 @@ workos-mvp/
     │
     ├── n8n/
     │   └── workflows/
-    │       └── ghost-audio-pipeline.json  # n8n workflow definition
+    │       ├── ghost-audio-pipeline.json  # Synthesizes audio
+    │       └── ghost-audio-callback.json  # Embeds audio in Ghost
     │
     ├── scripts/
     │   ├── init.sh             # VM initialization script

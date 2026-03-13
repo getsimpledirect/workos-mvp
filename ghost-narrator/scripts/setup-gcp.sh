@@ -279,6 +279,8 @@ store_secret "ghost-audio-n8n-password"     "n8n admin password"
 store_secret "ghost-audio-n8n-encrypt-key"  "n8n encryption key (run: openssl rand -hex 32)"
 store_secret "ghost-audio-ghost-key-site1"  "Ghost Content API key for Site 1"
 store_secret "ghost-audio-ghost-key-site2"  "Ghost Content API key for Site 2"
+store_secret "ghost-audio-ghost-admin-key-site1" "Ghost Admin API key for Site 1"
+store_secret "ghost-audio-ghost-admin-key-site2" "Ghost Admin API key for Site 2"
 
 echo ""
 echo "╔══════════════════════════════════════════════════════════╗"

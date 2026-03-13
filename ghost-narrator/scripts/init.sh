@@ -114,6 +114,8 @@ N8N_PASSWORD_FROM_SM=""
 N8N_ENCRYPTION_KEY_FROM_SM=""
 GHOST_KEY_SITE1_FROM_SM=""
 GHOST_KEY_SITE2_FROM_SM=""
+GHOST_ADMIN_KEY_SITE1_FROM_SM=""
+GHOST_ADMIN_KEY_SITE2_FROM_SM=""
 
 if [ -n "${GCP_PROJECT_ID}" ]; then
     echo ""
@@ -124,6 +126,8 @@ if [ -n "${GCP_PROJECT_ID}" ]; then
     N8N_ENCRYPTION_KEY_FROM_SM=$(fetch_secret "ghost-audio-n8n-encrypt-key" "${GCP_PROJECT_ID}")
     GHOST_KEY_SITE1_FROM_SM=$(fetch_secret "ghost-audio-ghost-key-site1" "${GCP_PROJECT_ID}")
     GHOST_KEY_SITE2_FROM_SM=$(fetch_secret "ghost-audio-ghost-key-site2" "${GCP_PROJECT_ID}")
+    GHOST_ADMIN_KEY_SITE1_FROM_SM=$(fetch_secret "ghost-audio-ghost-admin-key-site1" "${GCP_PROJECT_ID}")
+    GHOST_ADMIN_KEY_SITE2_FROM_SM=$(fetch_secret "ghost-audio-ghost-admin-key-site2" "${GCP_PROJECT_ID}")
 
     # Check if we got any secrets
     secrets_found=0
@@ -131,6 +135,8 @@ if [ -n "${GCP_PROJECT_ID}" ]; then
     [ -n "${N8N_ENCRYPTION_KEY_FROM_SM}" ] && secrets_found=$((secrets_found + 1)) && echo "  ✓ Found: ghost-audio-n8n-encrypt-key"
     [ -n "${GHOST_KEY_SITE1_FROM_SM}" ] && secrets_found=$((secrets_found + 1)) && echo "  ✓ Found: ghost-audio-ghost-key-site1"
     [ -n "${GHOST_KEY_SITE2_FROM_SM}" ] && secrets_found=$((secrets_found + 1)) && echo "  ✓ Found: ghost-audio-ghost-key-site2"
+    [ -n "${GHOST_ADMIN_KEY_SITE1_FROM_SM}" ] && secrets_found=$((secrets_found + 1)) && echo "  ✓ Found: ghost-audio-ghost-admin-key-site1"
+    [ -n "${GHOST_ADMIN_KEY_SITE2_FROM_SM}" ] && secrets_found=$((secrets_found + 1)) && echo "  ✓ Found: ghost-audio-ghost-admin-key-site2"
 
     if [ $secrets_found -gt 0 ]; then
         USE_SECRET_MANAGER=true
@@ -203,6 +209,26 @@ if [ -f .env ]; then
             fi
         fi
 
+        current_ghost_admin_key1=$(get_env_var "GHOST_SITE1_ADMIN_API_KEY")
+        if [ -n "${GHOST_ADMIN_KEY_SITE1_FROM_SM}" ] && [ "${current_ghost_admin_key1}" != "${GHOST_ADMIN_KEY_SITE1_FROM_SM}" ]; then
+            changes_available=true
+            if [ -z "${current_ghost_admin_key1}" ]; then
+                changes_summary+="  + GHOST_SITE1_ADMIN_API_KEY (will be added from Secret Manager)\n"
+            else
+                changes_summary+="  ~ GHOST_SITE1_ADMIN_API_KEY (will be updated from Secret Manager)\n"
+            fi
+        fi
+
+        current_ghost_admin_key2=$(get_env_var "GHOST_SITE2_ADMIN_API_KEY")
+        if [ -n "${GHOST_ADMIN_KEY_SITE2_FROM_SM}" ] && [ "${current_ghost_admin_key2}" != "${GHOST_ADMIN_KEY_SITE2_FROM_SM}" ]; then
+            changes_available=true
+            if [ -z "${current_ghost_admin_key2}" ]; then
+                changes_summary+="  + GHOST_SITE2_ADMIN_API_KEY (will be added from Secret Manager)\n"
+            else
+                changes_summary+="  ~ GHOST_SITE2_ADMIN_API_KEY (will be updated from Secret Manager)\n"
+            fi
+        fi
+
         if [ "${changes_available}" = true ]; then
             echo "The following changes are available from Secret Manager:"
             echo "─────────────────────────────────────────────────────────────"
@@ -219,6 +245,8 @@ if [ -f .env ]; then
                 [ -n "${N8N_ENCRYPTION_KEY_FROM_SM}" ] && update_env_var "N8N_ENCRYPTION_KEY" "${N8N_ENCRYPTION_KEY_FROM_SM}"
                 [ -n "${GHOST_KEY_SITE1_FROM_SM}" ] && update_env_var "GHOST_KEY_SITE1" "${GHOST_KEY_SITE1_FROM_SM}"
                 [ -n "${GHOST_KEY_SITE2_FROM_SM}" ] && update_env_var "GHOST_KEY_SITE2" "${GHOST_KEY_SITE2_FROM_SM}"
+                [ -n "${GHOST_ADMIN_KEY_SITE1_FROM_SM}" ] && update_env_var "GHOST_SITE1_ADMIN_API_KEY" "${GHOST_ADMIN_KEY_SITE1_FROM_SM}"
+                [ -n "${GHOST_ADMIN_KEY_SITE2_FROM_SM}" ] && update_env_var "GHOST_SITE2_ADMIN_API_KEY" "${GHOST_ADMIN_KEY_SITE2_FROM_SM}"
 
                 chmod 600 .env
                 echo "✓ Merged Secret Manager values into .env (other values preserved)"
@@ -399,6 +427,8 @@ GCS_BUCKET_NAME=${GCS_BUCKET_NAME}
 # Ghost API Keys
 GHOST_KEY_SITE1=${GHOST_KEY_SITE1_FROM_SM:-}
 GHOST_KEY_SITE2=${GHOST_KEY_SITE2_FROM_SM:-}
+GHOST_SITE1_ADMIN_API_KEY=${GHOST_ADMIN_KEY_SITE1_FROM_SM:-}
+GHOST_SITE2_ADMIN_API_KEY=${GHOST_ADMIN_KEY_SITE2_FROM_SM:-}
 
 # vLLM Configuration
 VLLM_BASE_URL=${VLLM_BASE_URL}
@@ -434,6 +464,8 @@ EOF
     echo "  Timezone       : ${TIMEZONE}"
     [ -n "${GHOST_KEY_SITE1_FROM_SM}" ] && echo "  Ghost Site 1   : (from Secret Manager)"
     [ -n "${GHOST_KEY_SITE2_FROM_SM}" ] && echo "  Ghost Site 2   : (from Secret Manager)"
+    [ -n "${GHOST_ADMIN_KEY_SITE1_FROM_SM}" ] && echo "  Ghost Admin S1 : (from Secret Manager)"
+    [ -n "${GHOST_ADMIN_KEY_SITE2_FROM_SM}" ] && echo "  Ghost Admin S2 : (from Secret Manager)"
     echo "─────────────────────────────────────────────────────────────"
     echo ""
     echo "✓ .env file created (permissions: 600)"
@@ -579,7 +611,9 @@ echo " TTS API   → http://${SERVER_IP}:8020/docs"
 echo " Health    → http://${SERVER_IP}:8020/health"
 echo ""
 echo "Next steps:"
-echo "  1. Open n8n UI and import n8n/workflows/ghost-audio-pipeline.json"
+echo "  1. Open n8n UI and import the workflows:"
+echo "     - n8n/workflows/ghost-audio-pipeline.json"
+echo "     - n8n/workflows/ghost-audio-callback.json"
 echo "     (n8n menu → Workflows → Import from file)"
 if [ -z "${GHOST_KEY_SITE1_VAL}" ] || [ -z "${GHOST_KEY_SITE2_VAL}" ]; then
     echo "  2. In n8n: Settings → Variables → add:"

@@ -84,9 +84,11 @@ services:
       - VLLM_BASE_URL=${VLLM_BASE_URL:-http://host.docker.internal:8001}
       - VLLM_MODEL_NAME=${VLLM_MODEL_NAME:-Qwen/Qwen3-14B}
       - TTS_SERVICE_URL=http://tts-service:8020
-      # Ghost API Keys (for fetching article content)
+      # Ghost API Keys (for fetching article content and updating posts)
       - GHOST_KEY_SITE1=${GHOST_KEY_SITE1:-}
       - GHOST_KEY_SITE2=${GHOST_KEY_SITE2:-}
+      - GHOST_SITE1_ADMIN_API_KEY=${GHOST_SITE1_ADMIN_API_KEY:-}
+      - GHOST_SITE2_ADMIN_API_KEY=${GHOST_SITE2_ADMIN_API_KEY:-}
     volumes:
       - n8n_data:/home/node/.n8n
     extra_hosts:

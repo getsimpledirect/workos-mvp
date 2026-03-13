@@ -1,0 +1,271 @@
+{
+  "name": "Ghost Audio Callback & Embed",
+  "nodes": [
+    {
+      "id": "webhook-tts-callback",
+      "name": "TTS Job Completed",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        250,
+        300
+      ],
+      "webhookId": "tts-callback",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "tts-callback",
+        "responseMode": "onReceived",
+        "responseData": "allEntries"
+      }
+    },
+    {
+      "id": "parse-callback",
+      "name": "Check Status & Parse Job ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        500,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const data = $input.first().json.body || $input.first().json;\n\n// We only want to embed completed jobs with a GCS URI\nif (data.status !== 'completed') {\n  return [{ json: { skip: true, reason: `Job status is ${data.status}` } }];\n}\n\n// GCS URI looks like gs://bucket/path.mp3\n// We need to convert it to a public https URL\nlet audioUrl = '';\nif (data.gcs_uri && data.gcs_uri.startsWith('gs://')) {\n    const parts = data.gcs_uri.replace('gs://', '').split('/');\n    const bucket = parts.shift();\n    const objectPath = parts.join('/');\n    audioUrl = `https://storage.googleapis.com/${bucket}/${objectPath}`;\n} else {\n    return [{ json: { skip: true, reason: 'No valid GCS URI found in callback' } }];\n}\n\n// We embedded the postId inside the jobId using the format {siteSlug}-{postId}-{slug}\n// For example: ghost-founderreality-com-64b7f9c8a2b3d4e5f6a7b8c9-my-article-slug\nconst jobIdParts = data.job_id.split('-');\n\n// We need to find the 24-char hex string which is the Ghost Post ID\nconst postIdIndex = jobIdParts.findIndex(part => part.length === 24 && /^[0-9a-fA-F]+$/.test(part));\n\nif (postIdIndex === -1) {\n    return [{ json: { skip: true, reason: 'Could not extract post ID from job ID' } }];\n}\n\nconst postId = jobIdParts[postIdIndex];\nconst siteSlug = jobIdParts.slice(0, postIdIndex).join('-');\n\nreturn [{\n  json: {\n    skip: false,\n    jobId: data.job_id,\n    postId,\n    siteSlug,\n    audioUrl\n  }\n}];"
+      }
+    },
+    {
+      "id": "should-embed",
+      "name": "Should Embed Audio?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.1,
+      "position": [
+        750,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cb-skip-false",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "log-skipped",
+      "name": "Log Skipped",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        450
+      ],
+      "parameters": {
+        "jsCode": "console.log('Skipping Embed:', $input.first().json.reason);\nreturn $input.all();"
+      }
+    },
+    {
+      "id": "get-ghost-post",
+      "name": "Get Latest Post Content",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1000,
+        200
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.siteSlug.includes('founderreality') ? 'https://ghost.founderreality.com' : 'https://your-second-site.com' }}/ghost/api/admin/posts/{{ $json.postId }}/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $json.siteSlug.includes('founderreality') ? `Ghost ${$env.GHOST_SITE1_ADMIN_API_KEY}` : `Ghost ${$env.GHOST_SITE2_ADMIN_API_KEY}` }}"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "formats",
+              "value": "html"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "build-embed-html",
+      "name": "Prepend Audio Player",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        200
+      ],
+      "parameters": {
+        "jsCode": "const postData = $input.first().json;\nconst post = postData.posts?.[0];\n\nif (!post) {\n    throw new Error('Ghost API did not return a post');\n}\n\n// We need the data from the parse-callback node\nconst parsed = $('Check Status & Parse Job ID').first().json;\n\n// Don't inject again if there's already an audio player added by this script\nlet html = post.html || '';\nif (html.includes('id=\"gn-audio-embed\"')) {\n    return [{ json: { skipUpdate: true, reason: 'Audio embed already present' } }];\n}\n\n// The audio widget HTML\nconst audioWidget = `\n<div id=\"gn-audio-embed\" style=\"margin-bottom: 24px; padding: 16px; background-color: #f8f9fa; border-radius: 8px; border: 1px solid #e9ecef;\">\n    <p style=\"margin-top: 0; margin-bottom: 8px; font-weight: 600; font-size: 0.9em; color: #495057;\">🎧 Listen to this article (AI Narrated)</p>\n    <audio controls style=\"width: 100%; height: 40px;\">\n        <source src=\"${parsed.audioUrl}\" type=\"audio/mpeg\">\n        Your browser does not support the audio element.\n    </audio>\n</div>\n`;\n\nconst newHtml = audioWidget + html;\n\nreturn [{\n  json: {\n    skipUpdate: false,\n    postId: post.id,\n    updatedAt: post.updated_at,\n    siteSlug: parsed.siteSlug,\n    newHtml\n  }\n}];"
+      }
+    },
+    {
+      "id": "should-update-ghost",
+      "name": "Update Ghost?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.1,
+      "position": [
+        1500,
+        200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "skip-update",
+              "leftValue": "={{ $json.skipUpdate }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "update-ghost",
+      "name": "Update Ghost Post",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1750,
+        150
+      ],
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ $json.siteSlug.includes('founderreality') ? 'https://ghost.founderreality.com' : 'https://your-second-site.com' }}/ghost/api/admin/posts/{{ $json.postId }}/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $json.siteSlug.includes('founderreality') ? `Ghost ${$env.GHOST_SITE1_ADMIN_API_KEY}` : `Ghost ${$env.GHOST_SITE2_ADMIN_API_KEY}` }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"posts\": [\n    {\n      \"html\": {{ JSON.stringify($json.newHtml) }},\n      \"updated_at\": \"{{ $json.updatedAt }}\"\n    }\n  ]\n}"
+      }
+    }
+  ],
+  "connections": {
+    "TTS Job Completed": {
+      "main": [
+        [
+          {
+            "node": "Check Status & Parse Job ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Status & Parse Job ID": {
+      "main": [
+        [
+          {
+            "node": "Should Embed Audio?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Embed Audio?": {
+      "main": [
+        [
+          {
+            "node": "Get Latest Post Content",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Skipped",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Latest Post Content": {
+      "main": [
+        [
+          {
+            "node": "Prepend Audio Player",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepend Audio Player": {
+      "main": [
+        [
+          {
+            "node": "Update Ghost?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Ghost?": {
+      "main": [
+        [
+          {
+            "node": "Update Ghost Post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all"
+  },
+  "versionId": "2",
+  "meta": {
+    "instanceId": "ghost-narrator-callback"
+  }
+}
