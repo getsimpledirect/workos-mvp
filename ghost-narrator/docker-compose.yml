@@ -81,7 +81,7 @@ services:
       # Timezone
       - GENERIC_TIMEZONE=${TIMEZONE:-UTC}
       # External services (passed to workflow)
-      - VLLM_BASE_URL=${VLLM_BASE_URL:-http://host.docker.internal:8000}
+      - VLLM_BASE_URL=${VLLM_BASE_URL:-http://host.docker.internal:8001}
       - VLLM_MODEL_NAME=${VLLM_MODEL_NAME:-Qwen/Qwen3-14B}
       - TTS_SERVICE_URL=http://tts-service:8020
       # Ghost API Keys (for fetching article content)
@@ -98,6 +98,12 @@ services:
         condition: service_healthy
       tts-service:
         condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
 
   # ─── TTS Service: Voice-Cloning API ──────────────────────────────────────────
   tts-service:
@@ -150,7 +156,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 4G
+          memory: 3G
         reservations:
           memory: 2G
 

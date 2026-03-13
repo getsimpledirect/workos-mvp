@@ -37,6 +37,7 @@ services:
       --max-num-seqs 4
       --dtype half
       --gpu-memory-utilization 0.92
+      --swap-space 0
       --enable-prefix-caching
       --enforce-eager
       --port 8000

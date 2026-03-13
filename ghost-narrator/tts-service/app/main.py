@@ -6,6 +6,7 @@ Built on Coqui XTTS-v2 + FastAPI.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
@@ -57,17 +58,25 @@ Voice-cloning Text-to-Speech API powered by **XTTS-v2** for Ghost CMS.
 """
 
 
+async def _background_model_loader():
+    """Load the TTS model in a background thread executor."""
+    logger.info("Starting background model loading...")
+    loop = asyncio.get_running_loop()
+    try:
+        # Run blocking initialization in a separate thread
+        await loop.run_in_executor(None, initialize_tts_engine)
+        logger.info("TTS engine initialized successfully (background)")
+    except Exception as exc:
+        logger.error(f"Failed to initialize TTS engine (background): {exc}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan manager for startup and shutdown."""
     logger.info("Starting TTS service...")
 
-    try:
-        initialize_tts_engine()
-        logger.info("TTS engine initialized")
-    except Exception as exc:
-        logger.error(f"Failed to initialize TTS engine: {exc}")
-        raise
+    # Start model loading in the background so the API comes up immediately
+    asyncio.create_task(_background_model_loader())
 
     try:
         await initialize_job_store(REDIS_URL)
@@ -96,7 +105,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as exc:
         logger.warning(f"HTTP client initialization failed (non-fatal): {exc}")
 
-    logger.info("TTS service startup complete")
+    logger.info("TTS service startup complete (model loading in background)")
 
     yield
 
