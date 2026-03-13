@@ -1,23 +1,87 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROJECT_ID="${PROJECT_ID:-your-gcp-project-id}"
-REGION="${REGION:-us-central1}"
-BUCKET_NAME="${BUCKET_NAME:-${PROJECT_ID}-ghost-audio}"
-VM_NAME="${VM_NAME:-workos-mvp}"
-VM_ZONE="${VM_ZONE:-us-central1-a}"
-SA_NAME="ghost-audio-pipeline"
-SA_DISPLAY_NAME="Ghost Audio Pipeline SA"
-
-SA_EMAIL="${SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
-
 echo "╔══════════════════════════════════════════════════════════╗"
 echo "║          Ghost → Audio Pipeline — GCP Setup             ║"
 echo "╚══════════════════════════════════════════════════════════╝"
-echo "Project : ${PROJECT_ID}"
-echo "Bucket  : ${BUCKET_NAME}"
-echo "VM      : ${VM_NAME} (${VM_ZONE})"
 echo ""
+
+# ─── Interactive prompts for configuration ───────────────────────────────────
+
+prompt_value() {
+    local var_name="$1"
+    local prompt_text="$2"
+    local default_value="${3:-}"
+    local value=""
+
+    if [ -n "${default_value}" ]; then
+        read -r -p "${prompt_text} [${default_value}]: " value
+        value="${value:-${default_value}}"
+    else
+        while [ -z "${value}" ]; do
+            read -r -p "${prompt_text}: " value
+            if [ -z "${value}" ]; then
+                echo "  ✗ This field is required. Please enter a value."
+            fi
+        done
+    fi
+
+    echo "${value}"
+}
+
+prompt_secret() {
+    local prompt_text="$1"
+    local value=""
+
+    while [ -z "${value}" ]; do
+        read -r -s -p "${prompt_text}: " value
+        echo ""
+        if [ -z "${value}" ]; then
+            echo "  ✗ This field is required. Please enter a value."
+        fi
+    done
+
+    echo "${value}"
+}
+
+echo "Please provide the following configuration values:"
+echo "─────────────────────────────────────────────────────────────"
+echo ""
+
+# Required values
+PROJECT_ID=$(prompt_value "PROJECT_ID" "GCP Project ID")
+REGION=$(prompt_value "REGION" "GCP Region" "us-central1")
+BUCKET_NAME=$(prompt_value "BUCKET_NAME" "GCS Bucket Name" "${PROJECT_ID}-ghost-audio")
+VM_NAME=$(prompt_value "VM_NAME" "Compute Engine VM Name" "workos-mvp")
+VM_ZONE=$(prompt_value "VM_ZONE" "VM Zone" "${REGION}-a")
+
+SA_NAME="ghost-audio-pipeline"
+SA_DISPLAY_NAME="Ghost Audio Pipeline SA"
+SA_EMAIL="${SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
+
+echo ""
+echo "─────────────────────────────────────────────────────────────"
+echo "Configuration Summary:"
+echo "─────────────────────────────────────────────────────────────"
+echo "  Project ID : ${PROJECT_ID}"
+echo "  Region     : ${REGION}"
+echo "  Bucket     : ${BUCKET_NAME}"
+echo "  VM Name    : ${VM_NAME}"
+echo "  VM Zone    : ${VM_ZONE}"
+echo "  SA Email   : ${SA_EMAIL}"
+echo "─────────────────────────────────────────────────────────────"
+echo ""
+
+read -r -p "Proceed with this configuration? [Y/n]: " confirm
+confirm="${confirm:-Y}"
+if [[ ! "${confirm}" =~ ^[Yy]$ ]]; then
+    echo "Setup cancelled."
+    exit 0
+fi
+
+echo ""
+
+# ─── Enable required APIs ────────────────────────────────────────────────────
 
 echo "▶ Enabling required APIs..."
 gcloud services enable \
@@ -26,6 +90,8 @@ gcloud services enable \
     compute.googleapis.com \
     --project="${PROJECT_ID}"
 echo "  ✓ APIs enabled"
+
+# ─── Create GCS bucket ───────────────────────────────────────────────────────
 
 echo "▶ Creating GCS bucket gs://${BUCKET_NAME}..."
 if gsutil ls -b "gs://${BUCKET_NAME}" &>/dev/null; then
@@ -55,6 +121,8 @@ LIFECYCLE
 gsutil lifecycle set /tmp/lifecycle.json "gs://${BUCKET_NAME}"
 echo "  ✓ Lifecycle policy set (tmp/ deleted after 7 days)"
 
+# ─── Create Service Account ──────────────────────────────────────────────────
+
 echo "▶ Creating Service Account ${SA_EMAIL}..."
 if gcloud iam service-accounts describe "${SA_EMAIL}" \
         --project="${PROJECT_ID}" &>/dev/null; then
@@ -65,6 +133,8 @@ else
         --project="${PROJECT_ID}"
     echo "  ✓ Service account created"
 fi
+
+# ─── Grant IAM permissions ───────────────────────────────────────────────────
 
 echo "▶ Granting Storage Object Admin on gs://${BUCKET_NAME}..."
 gsutil iam ch \
@@ -79,6 +149,8 @@ gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
     --quiet
 echo "  ✓ Secret Manager accessor granted"
 
+# ─── Attach Service Account to VM ────────────────────────────────────────────
+
 echo "▶ Attaching Service Account to VM ${VM_NAME}..."
 gcloud compute instances set-service-account "${VM_NAME}" \
     --zone="${VM_ZONE}" \
@@ -92,8 +164,10 @@ echo "     gcloud compute instances stop  ${VM_NAME} --zone=${VM_ZONE}"
 echo "     gcloud compute instances start ${VM_NAME} --zone=${VM_ZONE}"
 echo ""
 
+# ─── Store secrets in Secret Manager ─────────────────────────────────────────
+
 echo "▶ Storing secrets in Secret Manager..."
-echo "  (You will be prompted for each value — input is hidden)"
+echo "  (Input is hidden for security)"
 echo ""
 
 store_secret() {
@@ -115,6 +189,10 @@ store_secret() {
     else
         read -r -s -p "  Enter ${prompt}: " secret_val
         echo ""
+        if [ -z "${secret_val}" ]; then
+            echo "  ⚠ Skipping ${secret_name} (no value provided)"
+            return
+        fi
         gcloud secrets create "${secret_name}" \
             --replication-policy="automatic" \
             --project="${PROJECT_ID}"
@@ -126,7 +204,7 @@ store_secret() {
 }
 
 store_secret "ghost-audio-n8n-password"     "n8n admin password"
-store_secret "ghost-audio-n8n-encrypt-key"  "n8n encryption key (openssl rand -hex 32)"
+store_secret "ghost-audio-n8n-encrypt-key"  "n8n encryption key (run: openssl rand -hex 32)"
 store_secret "ghost-audio-ghost-key-site1"  "Ghost Content API key for Site 1"
 store_secret "ghost-audio-ghost-key-site2"  "Ghost Content API key for Site 2"
 
@@ -135,6 +213,12 @@ echo "╔═══════════════════════�
 echo "║                    Setup Complete ✓                     ║"
 echo "╚══════════════════════════════════════════════════════════╝"
 echo ""
+echo "Configuration used:"
+echo "  Project  : ${PROJECT_ID}"
+echo "  Bucket   : gs://${BUCKET_NAME}"
+echo "  VM       : ${VM_NAME} (${VM_ZONE})"
+echo "  SA Email : ${SA_EMAIL}"
+echo ""
 echo "Next steps:"
 echo "  1. Restart the VM to activate the new Service Account"
 echo "  2. Run ./scripts/init.sh on the VM to start the services"
@@ -142,5 +226,8 @@ echo "  3. Configure Ghost webhooks → http://<VM-IP>:5678/webhook/ghost-publis
 echo "  4. Import n8n/workflows/ghost-audio-pipeline.json into n8n"
 echo "  5. Set n8n variables: GHOST_KEY_SITE1, GHOST_KEY_SITE2"
 echo ""
-echo "Bucket URL : https://console.cloud.google.com/storage/browser/${BUCKET_NAME}"
-echo "SA email   : ${SA_EMAIL}"
+echo "Useful links:"
+echo "  Bucket   : https://console.cloud.google.com/storage/browser/${BUCKET_NAME}"
+echo "  Secrets  : https://console.cloud.google.com/security/secret-manager?project=${PROJECT_ID}"
+echo "  VM       : https://console.cloud.google.com/compute/instances?project=${PROJECT_ID}"
+echo ""
