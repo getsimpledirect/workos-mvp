@@ -36,7 +36,7 @@ services:
       --max-model-len 28000
       --max-num-seqs 4
       --dtype half
-      --gpu-memory-utilization 0.92
+      --gpu-memory-utilization 0.75
       --swap-space 0
       --enable-prefix-caching
       --enforce-eager
