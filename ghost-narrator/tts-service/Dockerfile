@@ -1,6 +1,9 @@
 # Using CUDA runtime image for GPU acceleration
 FROM pytorch/pytorch:2.1.2-cuda11.8-cudnn8-runtime
 
+# prevent interactive prompts during build
+ENV DEBIAN_FRONTEND=noninteractive
+
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
