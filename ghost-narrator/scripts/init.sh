@@ -66,14 +66,31 @@ update_env_var() {
     local var_name="$1"
     local var_value="$2"
     local env_file="${3:-.env}"
+    local tmp_file="${env_file}.tmp"
 
-    if grep -q "^${var_name}=" "${env_file}" 2>/dev/null; then
-        # Variable exists - update it (using | as delimiter to handle special chars)
-        sed -i "s|^${var_name}=.*|${var_name}=${var_value}|" "${env_file}"
-    else
-        # Variable doesn't exist - append it
-        echo "${var_name}=${var_value}" >> "${env_file}"
+    if [ ! -f "${env_file}" ]; then
+        echo "${var_name}=${var_value}" > "${env_file}"
+        return
     fi
+
+    # Using a temporary file and a loop is MUCH safer than sed for handling 
+    # arbitrary values containing special characters like &, |, /, or \
+    local found=false
+    while read -r line || [[ -n "$line" ]]; do
+        if [[ "$line" =~ ^[[:space:]]*${var_name}[[:space:]]*= ]]; then
+            echo "${var_name}=${var_value}"
+            found=true
+        else
+            echo "$line"
+        fi
+    done < "${env_file}" > "${tmp_file}"
+    
+    if [ "$found" = false ]; then
+        echo "${var_name}=${var_value}" >> "${tmp_file}"
+    fi
+    
+    mv "${tmp_file}" "${env_file}"
+    chmod 600 "${env_file}"
 }
 
 # Get a variable value from .env file
@@ -83,7 +100,13 @@ get_env_var() {
     local value=""
 
     if [ -f "${env_file}" ]; then
-        value=$(grep "^${var_name}=" "${env_file}" 2>/dev/null | cut -d= -f2- || echo "")
+        # More robust grep to handle spaces around equals
+        value=$(grep "^[[:space:]]*${var_name}[[:space:]]*=" "${env_file}" 2>/dev/null | head -n 1 | cut -d= -f2- || echo "")
+        # Strip optional surrounding quotes and whitespace
+        value="${value#[[:space:]]}"
+        value="${value%[[:space:]]}"
+        value="${value#[\"\']}"
+        value="${value%[\"\']}"
     fi
 
     echo "${value}"
@@ -157,8 +180,24 @@ if [ -f .env ]; then
     echo "✓ .env file found"
     echo ""
 
-    # Load existing values
-    source .env 2>/dev/null || true
+    # Load existing values safely (avoid source which can exit on bad syntax with set -e)
+    while read -r line || [[ -n "$line" ]]; do
+        # Skip comments and empty lines
+        [[ "$line" =~ ^[[:space:]]*#.*$ ]] && continue
+        [[ "$line" =~ ^[[:space:]]*$ ]] && continue
+        # Only export valid-looking assignments (VAR=VAL or VAR = VAL)
+        if [[ "$line" =~ ^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=.*$ ]]; then
+            key="${line%%=*}"
+            key="${key// /}" # Remove spaces from key
+            value="${line#*=}"
+            # Strip optional surrounding quotes and whitespace
+            value="${value# }"
+            value="${value% }"
+            value="${value#[\"\']}"
+            value="${value%[\"\']}"
+            export "$key=$value"
+        fi
+    done < .env
 
     # Check if we should merge with Secret Manager values
     if [ "${USE_SECRET_MANAGER}" = true ]; then
@@ -251,8 +290,21 @@ if [ -f .env ]; then
                 chmod 600 .env
                 echo "✓ Merged Secret Manager values into .env (other values preserved)"
 
-                # Reload updated values
-                source .env 2>/dev/null || true
+                # Reload updated values safely
+                while read -r line || [[ -n "$line" ]]; do
+                    [[ "$line" =~ ^[[:space:]]*#.*$ ]] && continue
+                    [[ "$line" =~ ^[[:space:]]*$ ]] && continue
+                    if [[ "$line" =~ ^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=.*$ ]]; then
+                        key="${line%%=*}"
+                        key="${key// /}"
+                        value="${line#*=}"
+                        value="${value# }"
+                        value="${value% }"
+                        value="${value#[\"\']}"
+                        value="${value%[\"\']}"
+                        export "$key=$value"
+                    fi
+                done < .env
             else
                 echo "ℹ Keeping existing .env values"
             fi
@@ -575,11 +627,17 @@ ELAPSED=0
 INTERVAL=5
 
 while [ $ELAPSED -lt $TIMEOUT ]; do
-    STATUS=$(docker inspect --format="{{.State.Health.Status}}" tts-service 2>/dev/null || echo "unknown")
+    STATUS=$(docker inspect --format="{{.State.Health.Status}}" tts-service 2>/dev/null || echo "starting")
     if [ "$STATUS" = "healthy" ]; then
         echo ""
         echo "✓ TTS service healthy"
         break
+    fi
+    # If container is not running at all, exit with warning
+    if ! docker ps --filter "name=tts-service" --filter "status=running" | grep -q "tts-service"; then
+        echo ""
+        echo "✗ TTS service container is not running. Check logs: docker logs tts-service"
+        exit 1
     fi
     echo -n "."
     sleep $INTERVAL
