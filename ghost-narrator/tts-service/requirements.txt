@@ -52,10 +52,10 @@ typing-extensions==4.11.0
 setuptools==69.5.1      # Required for pkg_resources (used by librosa)
 
 # ── Additional TTS Dependencies (auto-installed but pinned for stability) ──────
-numpy==1.24.4           # TTS requires numpy<2.0
-scipy==1.11.4
-librosa==0.10.1
-numba==0.58.1
+numpy==1.22.0           # TTS 0.22.0 requires 1.22.0 on Python 3.10
+scipy>=1.10.1
+librosa>=0.10.0
+numba>=0.57.0
 inflect==7.0.0
 anyascii==0.3.2
 gruut[de,es,fr]==2.2.3
