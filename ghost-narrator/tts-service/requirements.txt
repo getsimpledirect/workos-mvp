@@ -10,14 +10,11 @@
 #   .\run-docker.ps1 -Detached
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# ── PyTorch (CPU version) ──────────────────────────────────────────────────────
-# Using CPU-only PyTorch to reduce image size and avoid GPU dependencies
+# ── PyTorch (GPU/CUDA version) ────────────────────────────────────────────────
+# Using PyTorch with CUDA support for high-speed synthesis.
 #
-# NOTE: The Dockerfile uses extra-index-url to get CPU-only PyTorch wheels:
-#   pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
-#
-# This keeps PyPI as the primary source (for transformers, TTS, etc.) while adding
-# PyTorch's CPU-only wheel repository for torch/torchaudio (~500MB smaller than CUDA versions).
+# NOTE: The Dockerfile uses pytorch/pytorch base image which already includes
+# CUDA-enabled torch and torchaudio.
 torch==2.1.2
 torchaudio==2.1.2
 

@@ -456,7 +456,7 @@ else
 
     echo ""
     echo "── TTS Configuration (optional) ──"
-    TTS_DEVICE=$(prompt_value "TTS Device (cpu/cuda)" "cpu")
+    TTS_DEVICE=$(prompt_value "TTS Device (cpu/cuda)" "cuda")
     MAX_WORKERS=$(prompt_value "Max Workers" "4")
     MAX_CHUNK_WORDS=$(prompt_value "Max Chunk Words" "50")
 

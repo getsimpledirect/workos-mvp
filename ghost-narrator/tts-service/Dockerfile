@@ -1,4 +1,5 @@
-FROM python:3.11-slim-bookworm
+# Using CUDA runtime image for GPU acceleration
+FROM pytorch/pytorch:2.1.2-cuda11.8-cudnn8-runtime
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -15,8 +16,7 @@ WORKDIR /app
 COPY requirements.txt .
 
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir -r requirements.txt \
-        --extra-index-url https://download.pytorch.org/whl/cpu
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy the application package
 COPY app/ ./app/

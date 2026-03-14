@@ -122,7 +122,7 @@ services:
       - VOICE_SAMPLE_PATH=/app/voices/reference.wav
       - TTS_LANGUAGE=en
       - MAX_CHUNK_WORDS=50
-      - DEVICE=${TTS_DEVICE:-cpu}
+      - DEVICE=${TTS_DEVICE:-cuda}
       - MAX_WORKERS=${MAX_WORKERS:-4}
       # Auto-accept Coqui XTTS license (CPML for non-commercial use)
       - COQUI_TOS_AGREED=1
@@ -161,6 +161,10 @@ services:
           memory: 3G
         reservations:
           memory: 2G
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
 
 # ─── Volumes ───────────────────────────────────────────────────────────────────
 volumes:
