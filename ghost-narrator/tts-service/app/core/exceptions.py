@@ -105,3 +105,9 @@ class NotificationError(TTSServiceError):
     def __init__(self, url: str, message: str) -> None:
         self.url = url
         super().__init__(message, details=f"url={url}")
+
+
+class JobDeletedError(TTSServiceError):
+    """Raised when a job is explicitly deleted while processing."""
+
+    pass

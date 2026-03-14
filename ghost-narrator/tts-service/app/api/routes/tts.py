@@ -285,6 +285,112 @@ async def download(job_id: str) -> FileResponse:
     )
 
 
+@router.post(
+    "/pause/{job_id}",
+    response_model=StatusResponse,
+    summary="Pause TTS job",
+    description="Pause an active TTS job. Synthesis will stop after the current chunk.",
+    responses={
+        200: {"description": "Job paused"},
+        404: {"description": "Job not found"},
+        409: {"description": "Job already completed or failed"},
+    },
+)
+async def pause_job(job_id: str) -> StatusResponse:
+    """Pause a TTS job."""
+    job_store = get_job_store()
+    job = await job_store.get(job_id)
+
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+
+    if job["status"] in ("completed", "failed"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot pause job in '{job['status']}' state",
+        )
+
+    await job_store.update(job_id, {"status": "paused"})
+    logger.info(f"TTS job paused: {job_id}")
+
+    updated_job = await job_store.get(job_id)
+    return StatusResponse(job_id=job_id, **updated_job)
+
+
+@router.post(
+    "/resume/{job_id}",
+    response_model=StatusResponse,
+    summary="Resume TTS job",
+    description="Resume a paused TTS job.",
+    responses={
+        200: {"description": "Job resumed"},
+        404: {"description": "Job not found"},
+        409: {"description": "Job not paused"},
+    },
+)
+async def resume_job(job_id: str) -> StatusResponse:
+    """Resume a TTS job."""
+    job_store = get_job_store()
+    job = await job_store.get(job_id)
+
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+
+    if job["status"] != "paused":
+        raise HTTPException(
+            status_code=409, detail=f"Job is '{job['status']}', not 'paused'"
+        )
+
+    await job_store.update(job_id, {"status": "processing"})
+    logger.info(f"TTS job resumed: {job_id}")
+
+    updated_job = await job_store.get(job_id)
+    return StatusResponse(job_id=job_id, **updated_job)
+
+
+@router.delete(
+    "/{job_id}",
+    summary="Delete TTS job",
+    description="Abort an active job and remove all associated files and records.",
+    responses={
+        200: {"description": "Job deleted and resources cleaned up"},
+        404: {"description": "Job not found"},
+    },
+)
+async def delete_job(job_id: str) -> dict[str, Any]:
+    """Delete a TTS job and cleanup resources."""
+    job_store = get_job_store()
+    job = await job_store.get(job_id)
+
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+
+    # 1. Update status to 'deleted' to signal the background worker to stop
+    await job_store.update(job_id, {"status": "deleted"})
+    logger.info(f"TTS job signal for deletion: {job_id}")
+
+    # 2. Cleanup local files if they exist
+    job_dir = OUTPUT_DIR / job_id
+    final_mp3 = OUTPUT_DIR / f"{job_id}.mp3"
+    raw_wav = OUTPUT_DIR / f"{job_id}_raw.wav"
+
+    try:
+        if job_dir.exists():
+            import shutil
+            shutil.rmtree(job_dir, ignore_errors=True)
+        if final_mp3.exists():
+            final_mp3.unlink(missing_ok=True)
+        if raw_wav.exists():
+            raw_wav.unlink(missing_ok=True)
+    except Exception as exc:
+        logger.warning(f"File cleanup during deletion failed for {job_id}: {exc}")
+
+    # 3. Remove from job store
+    await job_store.delete(job_id)
+
+    return {"message": f"Job '{job_id}' and associated resources deleted"}
+
+
 @router.get(
     "/jobs",
     response_model=JobListResponse,

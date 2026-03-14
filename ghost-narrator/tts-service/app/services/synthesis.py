@@ -11,7 +11,7 @@ import asyncio
 import concurrent.futures
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Callable, Coroutine, Optional
 
 from app.config import DEVICE, MAX_CHUNK_WORDS
 from app.core.exceptions import SynthesisError
@@ -104,6 +104,7 @@ async def synthesize_chunks_sequential(
     chunks: list[str],
     job_dir: Path,
     job_id: str,
+    status_check_callback: Optional[Callable[[], Coroutine[Any, Any, None]]] = None,
 ) -> list[str]:
     """
     Synthesize multiple chunks sequentially.
@@ -134,6 +135,10 @@ async def synthesize_chunks_sequential(
     chunk_wav_paths: list[str] = []
 
     for idx, chunk in enumerate(chunks):
+        # Check job status before each chunk
+        if status_check_callback:
+            await status_check_callback()
+
         chunk_wav = str(job_dir / f"chunk_{idx:04d}.wav")
         word_count = len(chunk.split())
 
@@ -164,6 +169,7 @@ async def synthesize_chunks_parallel(
     chunks: list[str],
     job_dir: Path,
     job_id: str,
+    status_check_callback: Optional[Callable[[], Coroutine[Any, Any, None]]] = None,
 ) -> list[str]:
     """
     Synthesize multiple chunks in parallel using thread pool.
@@ -191,6 +197,11 @@ async def synthesize_chunks_parallel(
         )
 
     loop = asyncio.get_event_loop()
+
+    # Check job status before starting batch
+    if status_check_callback:
+        await status_check_callback()
+
     tasks: list[asyncio.Future[str]] = []
 
     for idx, chunk in enumerate(chunks):
@@ -222,6 +233,7 @@ async def synthesize_chunks_auto(
     job_dir: Path,
     job_id: str,
     device: Optional[str] = None,
+    status_check_callback: Optional[Callable[[], Coroutine[Any, Any, None]]] = None,
 ) -> list[str]:
     """
     Automatically choose the best synthesis strategy based on device and chunk count.
@@ -247,13 +259,17 @@ async def synthesize_chunks_auto(
         logger.debug(
             f"[{job_id}] Using parallel synthesis for {len(chunks)} chunks on CPU"
         )
-        return await synthesize_chunks_parallel(chunks, job_dir, job_id)
+        return await synthesize_chunks_parallel(
+            chunks, job_dir, job_id, status_check_callback
+        )
     else:
         logger.debug(
             f"[{job_id}] Using sequential synthesis for {len(chunks)} chunks "
             f"on {current_device}"
         )
-        return await synthesize_chunks_sequential(chunks, job_dir, job_id)
+        return await synthesize_chunks_sequential(
+            chunks, job_dir, job_id, status_check_callback
+        )
 
 
 def prepare_text_for_synthesis(

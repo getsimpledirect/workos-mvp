@@ -67,7 +67,7 @@ class StatusResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     job_id: str = Field(..., description="Unique job identifier.")
-    status: str = Field(..., description="Current status: queued, processing, completed, or failed.")
+    status: str = Field(..., description="Current status: queued, processing, paused, completed, or failed.")
     gcs_uri: Optional[str] = Field(default=None, description="GCS URI when completed and GCS is enabled.")
     local_path: Optional[str] = Field(default=None, description="Server file path for download endpoint.")
     error: Optional[str] = Field(default=None, description="Error message when status is 'failed'.")

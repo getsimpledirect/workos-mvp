@@ -17,6 +17,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from app.core.exceptions import JobDeletedError
 from app.config import DEVICE, GCS_BUCKET_NAME, MAX_CHUNK_WORDS, OUTPUT_DIR
 from app.services.audio import (
     apply_final_mastering,
@@ -42,25 +43,7 @@ async def run_tts_job(
     text: str,
     gcs_object_path: str,
 ) -> None:
-    """
-    Execute the complete TTS pipeline with parallel processing and optimizations.
-
-    Pipeline steps:
-    1. Splits text into ~50-word chunks (paragraph-aware)
-    2. Synthesizes each chunk to WAV via XTTS-v2
-    3. Normalizes each chunk to -23 LUFS (EBU R128)
-    4. Concatenates WAVs with context-aware silence gaps (250/450/700ms)
-    5. Applies final mastering (-16 LUFS, 44.1kHz, 128kbps, peak limiting)
-    6. Validates output quality (non-fatal warnings)
-    7. Uploads to GCS (if configured)
-    8. Notifies webhook (if configured)
-    9. Cleans up all temporary files
-
-    Args:
-        job_id: Unique identifier for this job.
-        text: The text to synthesize.
-        gcs_object_path: GCS object path for upload.
-    """
+    """Execute the complete TTS pipeline with parallel processing and optimizations."""
     start_time = time.time()
     loop = asyncio.get_event_loop()
     job_dir = OUTPUT_DIR / job_id
@@ -69,6 +52,17 @@ async def run_tts_job(
     final_mp3 = str(OUTPUT_DIR / f"{job_id}.mp3")
     job_store = get_job_store()
     executor = get_executor()
+
+    async def _check_status() -> None:
+        """Check if job is deleted or paused."""
+        while True:
+            job = await job_store.get(job_id)
+            if not job or job.get("status") == "deleted":
+                raise JobDeletedError(f"Job {job_id} was deleted")
+            if job.get("status") == "paused":
+                await asyncio.sleep(1)
+                continue
+            return
 
     # Track temp files for cleanup
     normalized_temp_files: list[str] = []
@@ -115,24 +109,44 @@ async def run_tts_job(
             },
         )
 
+        # Wait for TTS engine to be ready (up to 60 seconds)
+        engine_ready = False
+        from app.core.tts_engine import get_tts_engine
+        engine = get_tts_engine()
+        for _ in range(60):
+            if engine.is_ready:
+                engine_ready = True
+                break
+            await asyncio.sleep(1)
+            await _check_status()  # Still check if job was deleted while waiting
+
+        if not engine_ready:
+            raise RuntimeError("TTS engine failed to initialize within timeout")
+
         # Step 1: Prepare text - split into chunks
+        await _check_status()
         chunks, total_words = prepare_text_for_synthesis(text, MAX_CHUNK_WORDS)
         logger.info(
             f"[{job_id}] Chunking complete - {len(chunks)} chunks, {total_words} words"
         )
 
         # Step 2: Synthesize chunks to WAV files
-        chunk_wav_paths = await synthesize_chunks_auto(
+        await _check_status()
+        # Sequential synthesis is safer for memory (XTTS v2 is heavy) and 
+        # doesn't lose speed because the engine uses a lock anyway.
+        from app.services.synthesis import synthesize_chunks_sequential
+        chunk_wav_paths = await synthesize_chunks_sequential(
             chunks=chunks,
             job_dir=job_dir,
             job_id=job_id,
-            device=DEVICE,
+            status_check_callback=_check_status,
         )
 
         if not chunk_wav_paths:
             raise RuntimeError("No audio chunks were synthesized")
 
         # Step 3: Normalize all chunks to -23 LUFS (in parallel for speed)
+        await _check_status()
         logger.info(f"[{job_id}] Normalizing {len(chunk_wav_paths)} chunks (parallel)...")
 
         async def _normalize_one(i: int, wav_path: str) -> str:
@@ -159,7 +173,7 @@ async def run_tts_job(
         logger.info(f"[{job_id}] Normalization complete")
 
         # Step 4: Concatenate WAVs with dynamic gaps into raw WAV
-        # (concatenate to WAV to avoid a lossy MP3 roundtrip before mastering)
+        await _check_status()
         try:
             await loop.run_in_executor(
                 executor,
@@ -179,6 +193,7 @@ async def run_tts_job(
         logger.info(f"[{job_id}] Raw WAV created ({raw_size:.2f} MB)")
 
         # Step 5: Apply final mastering (-16 LUFS, 44.1kHz, 128kbps)
+        await _check_status()
         logger.info(f"[{job_id}] Applying final mastering...")
         mastering_ok = await loop.run_in_executor(
             executor,
@@ -218,6 +233,7 @@ async def run_tts_job(
             logger.warning(f"[{job_id}] Quality check failed (non-fatal): {exc}")
 
         # Step 7: Upload to GCS (if configured)
+        await _check_status()
         gcs_uri: Optional[str] = None
         if GCS_BUCKET_NAME and gcs_object_path and get_gcs_client():
             try:
@@ -265,8 +281,17 @@ async def run_tts_job(
         duration = time.time() - start_time
         logger.error(
             f"[{job_id}] ✗ Job failed after {duration:.1f}s: {exc}",
-            exc_info=True,
+            exc_info=not isinstance(exc, JobDeletedError),
         )
+
+        # Handle explicit deletion
+        if isinstance(exc, JobDeletedError):
+            logger.info(f"[{job_id}] Aborting job due to deletion")
+            _cleanup_failed_job(job_dir, final_mp3, job_id)
+            _cleanup_temp_files(normalized_temp_files, job_id)
+            _cleanup_intermediate(raw_wav, job_id)
+            _cleanup_intermediate(raw_mp3, job_id)
+            return
 
         # Cleanup on failure
         _cleanup_failed_job(job_dir, final_mp3, job_id)

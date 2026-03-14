@@ -279,33 +279,34 @@ def concatenate_wavs(
     wav_paths: list[str],
     output_mp3: str,
     chunk_texts: list[str] | None = None,
-    bitrate: str = DEFAULT_BITRATE,
-) -> str:
+        bitrate: str = DEFAULT_BITRATE,
+    ) -> str:
     """
-    Join all chunk WAVs into a single MP3 file with context-aware pauses.
+    Join all chunk WAVs into a single file with context-aware pauses.
 
     This function is optimized for smaller files (fewer than 10 chunks).
     For larger files, use ``concatenate_wavs_streaming`` instead.
 
     Args:
         wav_paths: List of paths to WAV files to concatenate.
-        output_mp3: Output path for the resulting MP3 file.
+        output_path: Output path for the resulting file (.wav or .mp3).
         chunk_texts: Original text of each chunk (for dynamic pause detection).
             If None, falls back to a default 450ms pause.
-        bitrate: Output MP3 bitrate (e.g., "96k", "128k").
+        bitrate: Output MP3 bitrate (if exporting to .mp3).
 
     Returns:
-        The path to the created MP3 file.
+        The path to the created file.
 
     Raises:
         AudioProcessingError: If concatenation fails.
     """
     validate_wav_files(wav_paths)
 
-    output_path = Path(output_mp3)
+    out_path = Path(output_path)
+    is_wav = out_path.suffix.lower() == ".wav"
 
     try:
-        logger.debug(f"Concatenating {len(wav_paths)} WAV files to {output_mp3}")
+        logger.debug(f"Concatenating {len(wav_paths)} WAV files to {output_path}")
 
         combined = AudioSegment.empty()
 
@@ -322,14 +323,17 @@ def concatenate_wavs(
                     pause_ms = 450  # Default sentence-boundary pause
                 combined += AudioSegment.silent(duration=pause_ms)
 
-        combined.export(output_mp3, format="mp3", bitrate=bitrate)
+        if is_wav:
+            combined.export(output_path, format="wav")
+        else:
+            combined.export(output_path, format="mp3", bitrate=bitrate)
 
         logger.debug(
-            f"Successfully created MP3: {output_mp3} "
-            f"({output_path.stat().st_size / (1024 * 1024):.2f} MB)"
+            f"Successfully created {'WAV' if is_wav else 'MP3'}: {output_path} "
+            f"({out_path.stat().st_size / (1024 * 1024):.2f} MB)"
         )
 
-        return output_mp3
+        return output_path
 
     except AudioProcessingError:
         raise
@@ -344,39 +348,40 @@ def concatenate_wavs(
 
 def concatenate_wavs_streaming(
     wav_paths: list[str],
-    output_mp3: str,
+    output_path: str,
     chunk_texts: list[str] | None = None,
     bitrate: str = DEFAULT_BITRATE,
     threshold_ms: int = STREAMING_THRESHOLD,
 ) -> str:
     """
-    Join all chunk WAVs into a single MP3 file with streaming to reduce memory.
+    Join all chunk WAVs into a single file with streaming to reduce memory.
 
     This function periodically exports to a temporary file to avoid holding
     the entire audio in memory. Use this for larger files (10+ chunks).
 
     Args:
         wav_paths: List of paths to WAV files to concatenate.
-        output_mp3: Output path for the resulting MP3 file.
+        output_path: Output path for the resulting file.
         chunk_texts: Original text of each chunk (for dynamic pause detection).
             If None, falls back to a default 450ms pause.
-        bitrate: Output MP3 bitrate (e.g., "96k", "128k").
+        bitrate: Output MP3 bitrate (if exporting to .mp3).
         threshold_ms: Memory threshold in milliseconds before flushing to disk.
 
     Returns:
-        The path to the created MP3 file.
+        The path to the created file.
 
     Raises:
         AudioProcessingError: If concatenation fails.
     """
     validate_wav_files(wav_paths)
 
-    output_path = Path(output_mp3)
+    out_path = Path(output_path)
+    is_wav = out_path.suffix.lower() == ".wav"
     temp_path: str | None = None
 
     try:
         logger.debug(
-            f"Streaming concatenation of {len(wav_paths)} WAV files to {output_mp3}"
+            f"Streaming concatenation of {len(wav_paths)} WAV files to {output_path}"
         )
 
         combined = AudioSegment.from_wav(wav_paths[0])
@@ -395,20 +400,24 @@ def concatenate_wavs_streaming(
 
             # If combined duration exceeds threshold, flush to disk
             if len(combined) > threshold_ms:
-                temp_path = f"{output_mp3}.temp.{int(time.time())}.mp3"
-                combined.export(temp_path, format="mp3", bitrate=bitrate)
-                combined = AudioSegment.from_mp3(temp_path)
+                # Always flush to WAV for temporary files to maintain quality
+                temp_path = f"{output_path}.temp.{int(time.time())}.wav"
+                combined.export(temp_path, format="wav")
+                combined = AudioSegment.from_wav(temp_path)
                 os.remove(temp_path)
                 temp_path = None
 
-        combined.export(output_mp3, format="mp3", bitrate=bitrate)
+        if is_wav:
+            combined.export(output_path, format="wav")
+        else:
+            combined.export(output_path, format="mp3", bitrate=bitrate)
 
         logger.debug(
-            f"Successfully created MP3 (streaming): {output_mp3} "
-            f"({output_path.stat().st_size / (1024 * 1024):.2f} MB)"
+            f"Successfully created {'WAV' if is_wav else 'MP3'} (streaming): {output_path} "
+            f"({out_path.stat().st_size / (1024 * 1024):.2f} MB)"
         )
 
-        return output_mp3
+        return output_path
 
     except AudioProcessingError:
         raise
@@ -426,7 +435,7 @@ def concatenate_wavs_streaming(
 
 def concatenate_wavs_auto(
     wav_paths: list[str],
-    output_mp3: str,
+    output_path: str,
     chunk_texts: list[str] | None = None,
     bitrate: str = DEFAULT_BITRATE,
     streaming_threshold_chunks: int = 10,
@@ -438,13 +447,13 @@ def concatenate_wavs_auto(
 
     Args:
         wav_paths: List of paths to WAV files to concatenate.
-        output_mp3: Output path for the resulting MP3 file.
+        output_path: Output path for the resulting file.
         chunk_texts: Original text of each chunk (for dynamic pause detection).
-        bitrate: Output MP3 bitrate (e.g., "96k", "128k").
+        bitrate: Output MP3 bitrate (if exporting to .mp3).
         streaming_threshold_chunks: Number of chunks above which to use streaming.
 
     Returns:
-        The path to the created MP3 file.
+        The path to the created file.
 
     Raises:
         AudioProcessingError: If concatenation fails.
@@ -455,11 +464,11 @@ def concatenate_wavs_auto(
             f"(threshold: {streaming_threshold_chunks})"
         )
         return concatenate_wavs_streaming(
-            wav_paths, output_mp3, chunk_texts, bitrate,
+            wav_paths, output_path, chunk_texts, bitrate,
         )
     else:
         logger.debug(f"Using standard concatenation for {len(wav_paths)} chunks")
-        return concatenate_wavs(wav_paths, output_mp3, chunk_texts, bitrate)
+        return concatenate_wavs(wav_paths, output_path, chunk_texts, bitrate)
 
 
 # ─── Audio Info Helpers ──────────────────────────────────────────────────────
