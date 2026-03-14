@@ -121,7 +121,7 @@ services:
       # TTS configuration
       - VOICE_SAMPLE_PATH=/app/voices/reference.wav
       - TTS_LANGUAGE=en
-      - MAX_CHUNK_WORDS=200
+      - MAX_CHUNK_WORDS=50
       - DEVICE=${TTS_DEVICE:-cpu}
       - MAX_WORKERS=${MAX_WORKERS:-4}
       # Auto-accept Coqui XTTS license (CPML for non-commercial use)

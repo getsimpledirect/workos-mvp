@@ -15,7 +15,7 @@ from typing import Final
 # Voice and TTS settings
 VOICE_SAMPLE_PATH: Final[str] = os.environ.get("VOICE_SAMPLE_PATH", "/app/voices/reference.wav")
 TTS_LANGUAGE: Final[str] = os.environ.get("TTS_LANGUAGE", "en")
-MAX_CHUNK_WORDS: Final[int] = int(os.environ.get("MAX_CHUNK_WORDS", "200"))
+MAX_CHUNK_WORDS: Final[int] = int(os.environ.get("MAX_CHUNK_WORDS", "50"))
 DEVICE: Final[str] = os.environ.get("DEVICE", "cpu")
 
 # Google Cloud Storage settings
@@ -42,8 +42,7 @@ VALID_JOB_ID_PATTERN: Final[re.Pattern[str]] = re.compile(r"^[a-zA-Z0-9_-]{1,200
 MAX_JOB_ID_LENGTH: Final[int] = 200
 
 # Audio settings
-INTER_CHUNK_PAUSE_MS: Final[int] = 400
-MP3_BITRATE: Final[str] = "96k"
+MP3_BITRATE: Final[str] = "128k"
 STREAMING_THRESHOLD_MS: Final[int] = 600_000
 
 # HTTP client settings

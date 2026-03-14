@@ -2,7 +2,8 @@
 Text processing utilities for TTS service.
 
 Provides functions for splitting text into optimal chunks for
-TTS synthesis while maintaining sentence boundaries.
+TTS synthesis while maintaining sentence boundaries, and for
+determining context-aware pause durations between chunks.
 """
 
 from __future__ import annotations
@@ -10,25 +11,31 @@ from __future__ import annotations
 import re
 from typing import Final
 
-# Default maximum words per chunk
-DEFAULT_MAX_CHUNK_WORDS: Final[int] = 200
+# Default maximum words per chunk (40-60 words = 8-12 second audio segments)
+DEFAULT_MAX_CHUNK_WORDS: Final[int] = 50
 
-# Sentence boundary pattern
-SENTENCE_BOUNDARY_PATTERN: Final[re.Pattern[str]] = re.compile(r"(?<=[.!?])\s+")
+# Transition words that suggest a new topic/paragraph boundary
+_TRANSITION_STARTERS: Final[tuple[str, ...]] = (
+    "now,", "but ", "so ", "here", "this", "the ", "when", "if ",
+    "what", "think", "there", "at the", "in the", "for ",
+)
 
 
 def split_into_chunks(text: str, max_words: int = DEFAULT_MAX_CHUNK_WORDS) -> list[str]:
     """
-    Split text into chunks at sentence boundaries for optimal TTS quality.
+    Split narration text into TTS-optimal chunks.
 
-    This function intelligently splits text into manageable chunks by:
-    1. Breaking at sentence boundaries (., !, ?)
-    2. Respecting maximum word count per chunk
-    3. Keeping sentences together when possible
+    Strategy:
+    - Split on paragraph boundaries first (double newline or sentence groups)
+    - Within paragraphs, group sentences into chunks of ~40-60 words
+    - Never split mid-sentence
+    - Keep sentence-ending punctuation with its sentence (not the next chunk)
+    - Chunks of 40-60 words produce 8-12 second audio segments — optimal for
+      XTTS-v2 voice consistency and natural prosody
 
     Args:
         text: The input text to split into chunks.
-        max_words: Maximum number of words per chunk (default: 200).
+        max_words: Maximum number of words per chunk (default: 50).
 
     Returns:
         A list of text chunks, each suitable for TTS synthesis.
@@ -49,122 +56,86 @@ def split_into_chunks(text: str, max_words: int = DEFAULT_MAX_CHUNK_WORDS) -> li
     if not text or not text.strip():
         return []
 
-    # Split into sentences at sentence boundaries
-    sentences = SENTENCE_BOUNDARY_PATTERN.split(text.strip())
-    sentences = [s.strip() for s in sentences if s.strip()]
+    # Normalize whitespace
+    text = re.sub(r'\r\n', '\n', text)
+    text = re.sub(r'[ \t]+', ' ', text)
 
-    if not sentences:
-        stripped = text.strip()
-        return [stripped] if stripped else []
+    # Split into paragraphs
+    paragraphs = [p.strip() for p in re.split(r'\n\n+', text) if p.strip()]
 
     chunks: list[str] = []
-    current_sentences: list[str] = []
-    current_word_count: int = 0
 
-    for sentence in sentences:
-        word_count = len(sentence.split())
+    for para in paragraphs:
+        # Split paragraph into sentences using common sentence endings
+        # Keep the punctuation with the sentence
+        sentences = re.split(r'(?<=[.!?])\s+', para.strip())
+        sentences = [s.strip() for s in sentences if s.strip()]
 
-        # Skip empty sentences
-        if word_count == 0:
-            continue
+        current_chunk_words: list[str] = []
+        current_word_count: int = 0
 
-        # If adding this sentence exceeds max_words and we have content,
-        # finalize the current chunk and start a new one
-        if current_word_count + word_count > max_words and current_sentences:
-            chunks.append(" ".join(current_sentences))
-            current_sentences = [sentence]
-            current_word_count = word_count
-        else:
-            current_sentences.append(sentence)
-            current_word_count += word_count
+        for sentence in sentences:
+            sentence_words = sentence.split()
+            sentence_word_count = len(sentence_words)
 
-    # Don't forget the last chunk
-    if current_sentences:
-        chunks.append(" ".join(current_sentences))
+            # Skip empty sentences
+            if sentence_word_count == 0:
+                continue
+
+            # If adding this sentence exceeds max_words and we already have content,
+            # flush current chunk and start a new one
+            if current_word_count + sentence_word_count > max_words and current_chunk_words:
+                chunks.append(' '.join(current_chunk_words))
+                current_chunk_words = []
+                current_word_count = 0
+
+            current_chunk_words.extend(sentence_words)
+            current_word_count += sentence_word_count
+
+            # If this single sentence is already at/over the limit, flush immediately
+            if current_word_count >= max_words:
+                chunks.append(' '.join(current_chunk_words))
+                current_chunk_words = []
+                current_word_count = 0
+
+        # Flush remaining words in this paragraph
+        if current_chunk_words:
+            chunks.append(' '.join(current_chunk_words))
+
+    # Filter empty or trivially short chunks
+    chunks = [c.strip() for c in chunks if c.strip() and len(c.split()) >= 3]
 
     # Fallback: if no chunks were created but we have text, return the whole text
     return chunks if chunks else [text.strip()]
 
 
-def count_words(text: str) -> int:
+def get_pause_ms_after_chunk(chunk: str, next_chunk: str | None) -> int:
     """
-    Count the number of words in a text string.
+    Determine appropriate silence gap after this chunk.
+
+    Returns milliseconds of silence to insert between audio chunks.
+    - After a sentence ending a paragraph (next chunk starts a new topic): 700ms
+    - After a sentence-ending chunk: 450ms
+    - After a mid-sentence break: 250ms
 
     Args:
-        text: The input text to count words in.
+        chunk: The current chunk text.
+        next_chunk: The next chunk text, or None if this is the last chunk.
 
     Returns:
-        The number of words in the text.
+        Silence duration in milliseconds.
     """
-    if not text or not text.strip():
-        return 0
-    return len(text.split())
+    if not next_chunk:
+        return 0  # No trailing silence at end
 
+    chunk_stripped = chunk.strip()
 
-def estimate_audio_duration(text: str, words_per_minute: int = 150) -> float:
-    """
-    Estimate the audio duration for a given text.
+    # Paragraph-level break: current ends with sentence-final punctuation
+    if chunk_stripped.endswith('.') or chunk_stripped.endswith('!') or chunk_stripped.endswith('?'):
+        # Check if next chunk seems to be a new thought (starts with transition words)
+        next_lower = next_chunk.lower().strip()
+        if any(next_lower.startswith(t) for t in _TRANSITION_STARTERS):
+            return 700  # Paragraph/topic boundary
+        return 450  # Normal sentence boundary
 
-    Args:
-        text: The input text to estimate duration for.
-        words_per_minute: Average speaking rate (default: 150 WPM).
-
-    Returns:
-        Estimated duration in seconds.
-    """
-    word_count = count_words(text)
-    return (word_count / words_per_minute) * 60
-
-
-def sanitize_text(text: str) -> str:
-    """
-    Sanitize text for TTS synthesis.
-
-    Performs basic text cleanup:
-    - Removes excessive whitespace
-    - Normalizes line breaks
-    - Strips leading/trailing whitespace
-
-    Args:
-        text: The input text to sanitize.
-
-    Returns:
-        Sanitized text ready for TTS processing.
-    """
-    if not text:
-        return ""
-
-    # Normalize line breaks to spaces
-    text = re.sub(r"[\r\n]+", " ", text)
-
-    # Collapse multiple spaces into one
-    text = re.sub(r"\s+", " ", text)
-
-    # Strip leading/trailing whitespace
-    text = text.strip()
-
-    return text
-
-
-def validate_text_length(text: str, max_length: int) -> tuple[bool, str]:
-    """
-    Validate that text does not exceed maximum length.
-
-    Args:
-        text: The input text to validate.
-        max_length: Maximum allowed character length.
-
-    Returns:
-        A tuple of (is_valid, error_message).
-        error_message is empty string if valid.
-    """
-    if not text:
-        return False, "Text must not be empty"
-
-    if not text.strip():
-        return False, "Text must not be empty or whitespace only"
-
-    if len(text) > max_length:
-        return False, f"Text too long ({len(text)} chars). Max: {max_length}"
-
-    return True, ""
+    return 250  # Mid-thought break

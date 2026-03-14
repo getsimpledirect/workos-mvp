@@ -6,11 +6,14 @@ audio processing, storage, and notifications.
 """
 
 from app.services.audio import (
+    apply_final_mastering,
     concatenate_wavs,
     concatenate_wavs_auto,
     concatenate_wavs_streaming,
     get_audio_duration,
     get_file_size_mb,
+    normalize_chunk_to_target_lufs,
+    validate_audio_quality,
 )
 from app.services.job_store import (
     JobStore,
@@ -50,11 +53,14 @@ from app.services.tts_job import run_tts_job
 
 __all__ = [
     # Audio processing
+    "apply_final_mastering",
     "concatenate_wavs",
     "concatenate_wavs_auto",
     "concatenate_wavs_streaming",
     "get_audio_duration",
     "get_file_size_mb",
+    "normalize_chunk_to_target_lufs",
+    "validate_audio_quality",
     # Job store
     "JobStore",
     "get_job_store",

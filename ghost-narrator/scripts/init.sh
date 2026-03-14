@@ -406,6 +406,7 @@ else
     echo "── TTS Configuration (optional) ──"
     TTS_DEVICE=$(prompt_value "TTS Device (cpu/cuda)" "cpu")
     MAX_WORKERS=$(prompt_value "Max Workers" "4")
+    MAX_CHUNK_WORDS=$(prompt_value "Max Chunk Words" "50")
 
     echo ""
     echo "── General (optional) ──"
@@ -437,6 +438,7 @@ VLLM_MODEL_NAME=${VLLM_MODEL_NAME}
 # TTS Configuration
 TTS_DEVICE=${TTS_DEVICE}
 MAX_WORKERS=${MAX_WORKERS}
+MAX_CHUNK_WORDS=${MAX_CHUNK_WORDS}
 
 # General
 TIMEZONE=${TIMEZONE}
@@ -461,6 +463,7 @@ EOF
     echo "  vLLM Model     : ${VLLM_MODEL_NAME}"
     echo "  TTS Device     : ${TTS_DEVICE}"
     echo "  Max Workers    : ${MAX_WORKERS}"
+    echo "  Max Chunk Words: ${MAX_CHUNK_WORDS}"
     echo "  Timezone       : ${TIMEZONE}"
     [ -n "${GHOST_KEY_SITE1_FROM_SM}" ] && echo "  Ghost Site 1   : (from Secret Manager)"
     [ -n "${GHOST_KEY_SITE2_FROM_SM}" ] && echo "  Ghost Site 2   : (from Secret Manager)"
