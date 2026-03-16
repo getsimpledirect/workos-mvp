@@ -187,7 +187,7 @@ class TTSEngine:
 
             result = subprocess.run(
                 cmd,
-                cwd="/opt/conda/lib/python3.11/site-packages/fish_speech",
+                cwd="/app",
                 capture_output=True,
                 text=True,
                 timeout=60
@@ -309,7 +309,7 @@ class TTSEngine:
 
             result = subprocess.run(
                 cmd,
-                cwd="/opt/conda/lib/python3.11/site-packages/fish_speech",
+                cwd="/app",
                 capture_output=True,
                 text=True,
                 timeout=180  # 3 minutes timeout for long text
@@ -365,7 +365,7 @@ class TTSEngine:
 
             result = subprocess.run(
                 cmd,
-                cwd="/opt/conda/lib/python3.11/site-packages/fish_speech",
+                cwd="/app",
                 capture_output=True,
                 text=True,
                 timeout=120  # 2 minutes timeout
