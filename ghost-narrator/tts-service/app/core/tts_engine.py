@@ -400,3 +400,29 @@ class TTSEngine:
         """Cleanup resources on deletion."""
         if hasattr(self, '_whisper_model') and self._whisper_model is not None:
             del self._whisper_model
+
+def get_tts_engine() -> TTSEngine:
+    """
+    Get the singleton TTSEngine instance.
+
+    Returns:
+        The TTSEngine singleton instance.
+    """
+    return TTSEngine()
+
+
+def initialize_tts_engine() -> TTSEngine:
+    """
+    Initialize and return the TTS engine.
+
+    This function should be called during application startup.
+
+    Returns:
+        The initialized TTSEngine instance.
+
+    Raises:
+        TTSEngineError: If initialization fails.
+    """
+    engine = TTSEngine()
+    engine.initialize()
+    return engine
