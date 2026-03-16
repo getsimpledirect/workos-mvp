@@ -499,7 +499,7 @@ First run downloads ~4 GB of Fish Speech v1.5 weights. If it fails:
 
 ```bash
 # Pre-download inside container
-docker exec -it tts-service python -m fish_speech.models.dac.inference --help
+docker exec -it tts-service python -m tools.vqgan.inference --help
 ```
 
 ### Out of memory errors

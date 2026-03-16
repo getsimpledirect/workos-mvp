@@ -180,9 +180,10 @@ class TTSEngine:
         try:
             # Run Fish Speech DAC inference to get VQ tokens
             cmd = [
-                "python", "-m", "fish_speech.models.dac.inference",
+                "python", "-m", "tools.vqgan.inference",
                 "-i", str(ref_path),
-                "--checkpoint-path", str(codec_path)
+                "--checkpoint-path", str(codec_path),
+                "--device", self._device
             ]
 
             result = subprocess.run(
@@ -286,9 +287,10 @@ class TTSEngine:
         try:
             # Prepare command for text2semantic inference
             cmd = [
-                "python", "-m", "fish_speech.models.text2semantic.inference",
+                "python", "-m", "tools.llama.generate",
                 "--text", text,
                 "--checkpoint-path", str(self._checkpoint_dir),
+                "--device", self._device,
             ]
 
             # Add reference audio parameters for voice cloning
@@ -356,9 +358,10 @@ class TTSEngine:
 
             # Run DAC decoder
             cmd = [
-                "python", "-m", "fish_speech.models.dac.inference",
+                "python", "-m", "tools.vqgan.inference",
                 "-i", str(codes_path),
-                "--checkpoint-path", str(codec_path)
+                "--checkpoint-path", str(codec_path),
+                "--device", self._device
             ]
 
             logger.debug(f"Running DAC decoder: {' '.join(cmd)}")
