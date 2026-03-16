@@ -270,7 +270,7 @@ if [ "$DETACHED" = true ]; then
     echo "  View logs:     ./run-docker.sh --logs"
     echo "  Stop service:  ./run-docker.sh --stop"
     echo ""
-    info "Note: First run will download ~2GB XTTS-v2 model (cached for future runs)."
+    info "Note: First run will download ~4GB Fish Speech v1.5 models (cached for future runs)."
 else
     RUN_ARGS+=("-it")
     info "Starting in foreground mode (Ctrl+C to stop)..."

@@ -55,7 +55,7 @@ WorkOS MVP is a comprehensive AI infrastructure stack designed for self-hosted, 
 │  │                                                                       │ │
 │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐       │ │
 │  │  │    Redis     │  │     n8n      │  │    TTS Service       │       │ │
-│  │  │  Job Store   │  │  Workflows   │  │   XTTS-v2 Voice      │       │ │
+│  │  │  Job Store   │  │  Workflows   │  │  Fish Speech v1.5    │       │ │
 │  │  │  :6379       │  │  :5678       │  │   :8020              │       │ │
 │  │  └──────────────┘  └──────────────┘  └──────────────────────┘       │ │
 │  └─────────────────────────────────────────────────────────────────────┘ │
@@ -80,7 +80,7 @@ WorkOS MVP is a comprehensive AI infrastructure stack designed for self-hosted, 
 |---------|------|-------------|
 | **Redis** | 6379 | Job state persistence and queue management |
 | **n8n** | 5678 | Visual workflow orchestration and automation |
-| **TTS Service** | 8020 | Voice-cloning TTS API using Coqui XTTS-v2 |
+| **TTS Service** | 8020 | Voice-cloning TTS API using Fish Speech v1.5 |
 
 ---
 
@@ -160,7 +160,7 @@ OpenAI-compatible API for local LLM inference.
 
 ```bash
 # Chat completion
-curl http://localhost:8001/v1/chat/completions \
+curl http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "Qwen/Qwen3-14B-AWQ",
@@ -225,6 +225,10 @@ cp /path/to/your/voice.wav tts-service/voices/reference.wav
 | `VLLM_MODEL_NAME` | Model name for vLLM |
 | `GHOST_SITE1_ADMIN_API_KEY` | Admin API key for Ghost site 1 |
 | `GHOST_SITE2_ADMIN_API_KEY` | Admin API key for Ghost site 2 |
+| `TTS_DEVICE` | Device to run TTS on (`cpu` or `cuda`) |
+| `MAX_WORKERS` | Number of parallel workers for CPU synthesis |
+| `TIMEZONE` | Timezone for the n8n container |
+
 
 ### GCP Setup (Optional)
 
@@ -263,7 +267,7 @@ N8N_USER=admin
 N8N_PASSWORD=your-secure-password
 N8N_ENCRYPTION_KEY=<openssl rand -hex 32>
 GCS_BUCKET_NAME=your-gcs-bucket-name
-VLLM_BASE_URL=http://host.docker.internal:8000
+VLLM_BASE_URL=http://host.docker.internal:8001/v1
 VLLM_MODEL_NAME=Qwen/Qwen3-14B
 GHOST_SITE1_ADMIN_API_KEY=your-admin-key-1
 GHOST_SITE2_ADMIN_API_KEY=your-admin-key-2
@@ -277,7 +281,7 @@ TIMEZONE=UTC
 | Service | VRAM Usage |
 |---------|------------|
 | vLLM (Qwen3-14B-AWQ) | ~8GB |
-| TTS Service (XTTS-v2) | ~2-3GB |
+| TTS Service (Fish Speech v1.5) | ~2-3GB |
 | **Total** | ~10-11GB |
 
 ---
@@ -352,7 +356,7 @@ curl http://localhost:5678/healthz
 
 **Symptoms:** Health check times out
 
-**Cause:** First run downloads XTTS-v2 model (~1.8GB)
+**Cause:** First run downloads Fish Speech v1.5 models (~4GB)
 
 **Solution:** Wait up to 5 minutes for initial model download
 
@@ -386,6 +390,7 @@ workos-mvp/
 ├── README.md                   # This file
 │
 └── ghost-narrator/             # Audio narration pipeline
+    ├── .env.example            # Environment variable template
     ├── docker-compose.yml      # Pipeline services configuration
     ├── .gitignore              # Git ignore rules
     │

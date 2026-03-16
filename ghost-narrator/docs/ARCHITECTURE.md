@@ -29,7 +29,7 @@ Every time you publish a post on either of your Ghost websites, this pipeline au
 1. **Detects** the new article via a Ghost webhook
 2. **Fetches** the full article text using the Ghost Content API
 3. **Rewrites** the article into podcast-style narration using your existing **Qwen-3-14b** model
-4. **Synthesises** audio using **Coqui XTTS v2** with your **cloned voice** (from your 45-second sample)
+4. **Synthesises** audio using **Fish Speech v1.5** with your **cloned voice** (from your 45-second sample)
 5. **Uploads** the MP3 to your **GCS bucket** at a predictable path
 6. **Embeds** an HTML5 audio player back into the Ghost post (optional)
 
@@ -47,8 +47,8 @@ Every time you publish a post on either of your Ghost websites, this pipeline au
 │  │                                                                   │    │
 │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐   │    │
 │  │  │   Open WebUI │  │   vLLM API   │  │   TTS Service (NEW)  │   │    │
-│  │  │  (existing)  │  │  Qwen-3-14b  │  │   Coqui XTTS v2      │   │    │
-│  │  │   :3000      │  │  :8000       │  │   :8020              │   │    │
+│  │  │  (existing)  │  │  Qwen-3-14b  │  │  Fish Speech v1.5    │   │    │
+│  │  │   :3000      │  │  :8001       │  │   :8020              │   │    │
 │  │  │              │  │  ~8GB VRAM   │  │   ~2-3GB VRAM/CPU    │   │    │
 │  │  └──────────────┘  └──────────────┘  └──────────────────────┘   │    │
 │  │                                                                   │    │
@@ -374,30 +374,35 @@ The TTS service uses a `JobStore` abstraction layer that automatically falls bac
 
 ---
 
-### 2. Coqui XTTS v2 — The Voice Engine (NEW)
+### 2. Fish Speech v1.5 — The Voice Engine
 
-**Why XTTS v2?** It's the best open-source voice cloning model as of 2025:
+**Why Fish Speech v1.5?** It's a state-of-the-art open-source voice cloning model:
 
 - Clones a voice from **6–60 seconds** of reference audio (your 45s sample is ideal)
-- Produces **natural, expressive speech** — not robotic
-- Supports **multiple languages** out of the box
-- Runs on **CPU or GPU** — we use "auto" mode to share the L4 without fighting vLLM
+- Produces **high-fidelity, natural speech** with excellent prosody
+- Supports **multiple languages** out of the box (13+ languages)
+- Runs on **CPU or GPU** — optimized for L4 GPU or CPU-only deployment
+- Uses **CLI-based inference** for maximum stability and compatibility
 
-**How voice cloning works:** XTTS v2 uses a technique called "zero-shot speaker conditioning." It encodes your voice sample into a speaker embedding (a mathematical fingerprint of your voice's timbre, rhythm, and prosody). At inference time, it conditions the audio decoder on this embedding, making all generated speech sound like you.
+**How voice cloning works:** Fish Speech v1.5 uses a three-step inference pipeline:
+1. **Reference Encoding**: DAC codec encodes your voice sample into VQ (vector-quantized) tokens representing voice characteristics
+2. **Semantic Generation**: Text2Semantic model converts input text to semantic tokens using the reference as conditioning
+3. **Audio Decoding**: DAC decoder synthesizes final audio from semantic tokens with your cloned voice
 
-**The chunking problem:** XTTS v2 has a hard limit of ~250 characters per synthesis call — it struggles with longer inputs. Our TTS service solves this by:
-1. Splitting the full narration script into sentences
-2. Grouping sentences into chunks ≤200 words (configurable)
-3. Synthesising chunks in **parallel on CPU** or sequentially on GPU
-4. Concatenating all chunks with 400ms silence between them
+**Implementation approach:** Fish Speech v1.5 uses CLI-based inference via subprocess calls:
+1. Reference audio encoded once during initialization to VQ tokens (fake.npy)
+2. Each synthesis request generates semantic tokens (codes_0.npy) from text
+3. Semantic tokens decoded to high-quality audio (44.1kHz WAV)
+4. All file operations handled in working directory with proper cleanup
 
-**Performance Optimizations (NEW):**
-- **Parallel Processing**: CPU mode now synthesizes multiple chunks simultaneously using ThreadPoolExecutor (up to 4x faster)
-- **Resource Pooling**: Reusable GCS and HTTP clients eliminate connection overhead (~50% faster uploads/callbacks)
-- **Streaming Concatenation**: Large files (>10 chunks) use progressive encoding to reduce memory by up to 80%
-- **Smart Strategy**: Automatically adapts processing based on device type and file size
+**Performance Characteristics:**
+- **Initialization**: 30-60 seconds (one-time reference encoding + transcription)
+- **Synthesis Time**: 10-30 seconds per request (device-dependent)
+- **Memory Usage**: 4-6GB RAM (GPU mode), 8-16GB RAM (CPU mode)
+- **VRAM Usage**: 2-3GB when using GPU acceleration
+- **Thread Safety**: Single synthesis lock prevents concurrent GPU conflicts
 
-For a 2,000-word article with 4 CPU workers: ~50-60 seconds (vs ~3-5 minutes sequential). GPU mode: ~20-30 seconds.
+For a typical article synthesis: ~10-30 seconds total. Reference encoding happens once at startup.
 
 ---
 
@@ -458,12 +463,14 @@ This is the most critical concern. Here's the breakdown:
 | Component | VRAM Usage | RAM Usage | Notes |
 |---|---|---|---|
 | Qwen-3-14b (AWQ 4-bit) | ~7–8 GB | ~2 GB | Already running in your vLLM setup |
-| XTTS v2 (GPU mode) | ~2–3 GB | ~2 GB | Sequential processing optimal for CUDA |
+| Fish Speech v1.5 (GPU mode) | ~2–3 GB | ~4-6 GB | CLI-based inference with DAC + text2semantic |
 | Redis | 0 GB VRAM | ~50 MB | Persistent job storage |
 | n8n | 0 GB VRAM | ~200 MB | Workflow orchestration |
-| **Total (GPU mode)** | **~10–11 GB** | **~4.3 GB** | Fits in 16GB with 5GB headroom |
-| XTTS v2 (CPU mode, parallel) | 0 GB VRAM | ~800 MB - 1.2 GB | **4x faster with parallel synthesis** |
-| **Total (CPU mode)** | **~8 GB VRAM** | **~3.3 GB** | **Recommended - optimized performance** |
+| **Total (GPU mode)** | **~10–11 GB** | **~6.3 GB** | Fits in L4 with 5GB headroom |
+| Fish Speech v1.5 (CPU mode) | 0 GB VRAM | ~8-16 GB | **Recommended for resource isolation** |
+| **Total (CPU mode)** | **~8 GB VRAM** | **~10.3 GB** | **vLLM on GPU, TTS on CPU - optimal** |
+</text>
+
 
 **Recommendation:** Set `DEVICE=cpu` and `MAX_WORKERS=4` (or match your CPU core count) in your `.env`. 
 
@@ -492,28 +499,68 @@ Since this is a **background async pipeline** (not real-time), CPU parallel mode
 ## Directory Structure
 
 ```
-ghost-audio-pipeline/
+ghost-narrator/
 │
-├── docker-compose.additions.yml   # New services to add to existing compose
 ├── .env.example                   # Environment variable template
-├── .env                           # Your actual values (gitignored)
+├── .gitignore
+├── CHANGELOG.md
+├── docker-compose.yml             # Main Docker Compose file for all services
+├── README.md
 │
-├── tts-service/
-│   ├── Dockerfile                 # CUDA-enabled image for XTTS v2
-│   ├── app.py                     # FastAPI TTS service with chunking
-│   └── requirements.txt           # Python dependencies
-│
-├── voices/
-│   └── reference.wav              # YOUR cloned voice sample (you provide this)
+├── docs/
+│   └── ARCHITECTURE.md            # This file
 │
 ├── n8n/
 │   ├── SETUP_GUIDE.md             # Guide to setting up the n8n workflows
 │   └── workflows/
-│       ├── ghost-audio-pipeline.json  # Workflow 1: Triggers narration
-│       └── ghost-audio-callback.json  # Workflow 2: Embeds audio on completion
+│       ├── ghost-audio-callback.json
+│       └── ghost-audio-pipeline.json
 │
-└── scripts/
-    └── setup.sh                   # One-time setup script
+├── scripts/
+│   ├── init.sh                    # Initializes and starts the services
+│   ├── setup-gcp.sh               # Sets up GCP resources
+│   └── validate-build.sh          # Validates the Docker build
+│
+├── tts-service/
+│   ├── .dockerignore
+│   ├── Dockerfile                 # Multi-stage Dockerfile for the TTS service
+│   ├── QUICKSTART.md
+│   ├── README.md
+│   ├── requirements.txt           # Python dependencies
+│   ├── run-docker.ps1             # PowerShell script to run the service
+│   ├── run-docker.sh              # Shell script to run the service
+│   │
+│   ├── app/                       # Main application folder
+│   │   ├── __init__.py
+│   │   ├── config.py              # Configuration loading
+│   │   ├── dependencies.py        # FastAPI dependencies
+│   │   ├── main.py                # FastAPI app entry point
+│   │   │
+│   │   ├── api/
+│   │   │   └── routes/
+│   │   │       ├── health.py      # Health check endpoint
+│   │   │       └── tts.py         # TTS generation endpoint
+│   │   │
+│   │   ├── core/
+│   │   │   ├── exceptions.py      # Custom exceptions
+│   │   │   └── tts_engine.py      # Core TTS logic
+│   │   │
+│   │   ├── models/
+│   │   │   └── schemas.py         # Pydantic schemas
+│   │   │
+│   │   ├── services/              # Business logic services
+│   │   │   ├── audio.py
+│   │   │   ├── job_store.py
+│   │   │   ├── notification.py
+│   │   │   ├── storage.py
+│   │   │   ├── synthesis.py
+│   │   │   └── tts_job.py
+│   │   │
+│   │   └── utils/
+│   │       └── text.py
+│   │
+│   └── voices/
+│       └── .gitkeep               # Placeholder for voice samples
 ```
 
 ---
@@ -524,8 +571,8 @@ ghost-audio-pipeline/
 
 ```bash
 # On your GCP VM
-mkdir -p ~/ghost-audio-pipeline
-cd ~/ghost-audio-pipeline
+mkdir -p ~/ghost-narrator
+cd ~/ghost-narrator
 
 # Copy all the files from this guide into this directory
 # (or git clone if you put them in a repo)
@@ -539,13 +586,13 @@ Your 45-second voice recording needs to be in WAV format:
 # If your recording is an MP3:
 sudo apt-get install -y ffmpeg
 ffmpeg -i your-voice-recording.mp3 \
-    -ar 22050 \        # 22050 Hz sample rate (XTTS v2 native)
+    -ar 22050 \        # 22050 Hz sample rate (Fish Speech v1.5 native)
     -ac 1 \            # mono channel
     -c:a pcm_s16le \   # 16-bit PCM (uncompressed WAV)
-    voices/reference.wav
+    tts-service/voices/reference.wav
 
 # Verify it looks right
-ffprobe voices/reference.wav
+ffprobe tts-service/voices/reference.wav
 # Should show: Audio: pcm_s16le, 22050 Hz, mono, s16, 352 kb/s
 ```
 
@@ -566,71 +613,25 @@ nano .env
 
 ### Step 4: Create GCP Service Account
 
-```bash
-# In GCP Console → IAM → Service Accounts → Create Service Account
-# Name: ghost-audio-pipeline
-# Roles needed:
-#   - Storage Object Creator (to upload audio files)
-#   - Storage Object Viewer  (to make files accessible)
+This can be done using the `scripts/setup-gcp.sh` script or manually.
 
-# Download the JSON key and save it to:
-mkdir -p ~/gcp-keys
-# Upload key.json there, then set in .env:
-# GCP_SA_KEY_PATH=/home/ayush/gcp-keys/ghost-audio-sa.json
-```
+### Step 5: Start the Services
 
-### Step 5: Integrate With Existing Docker Compose
-
-Find your existing `docker-compose.yml` (the one with vLLM and Open WebUI). You have two options:
-
-**Option A — Merge files (recommended):**
-```bash
-# Start all services together
-docker compose \
-    -f ~/docker-compose.yml \
-    -f ~/ghost-audio-pipeline/docker-compose.additions.yml \
-    --env-file ~/ghost-audio-pipeline/.env \
-    up -d
-```
-
-**Option B — Add services to existing file:**
-Copy the service definitions from `docker-compose.additions.yml` into your existing `docker-compose.yml` under the `services:` key. Make sure n8n and tts-service are on the same Docker network as vLLM.
-
-**Critical: Network connectivity**
-n8n needs to reach vLLM. In your docker-compose, both must be on the same network. The TTS service's `app.py` calls `http://localhost:8000` but from inside Docker this should be the vLLM service name (e.g., `http://vllm:8000` or whatever your vLLM service is named). Check your existing compose file and update the vLLM URL in the n8n workflow accordingly.
-
-### Step 6: Build the TTS Image
+The `scripts/init.sh` script will handle building the Docker images and starting the services.
 
 ```bash
-cd ~/ghost-audio-pipeline
-docker build -t ghost-audio-tts:latest ./tts-service/
-# First build downloads model weights (~2GB) — takes 5-10 min
+bash scripts/init.sh
 ```
 
-### Step 7: Start Services
-
-```bash
-docker compose \
-    -f ~/docker-compose.yml \
-    -f docker-compose.additions.yml \
-    --env-file .env \
-    up -d n8n tts-service redis
-
-# Check they're healthy
-docker ps
-docker logs tts-service -f    # Wait for "XTTS v2 ready"
-docker logs n8n -f
-```
-
-### Step 8: Import n8n Workflow
+### Step 6: Import n8n Workflow
 
 1. Open `http://YOUR_VM_IP:5678` in your browser
 2. Login with your N8N_USER/N8N_PASSWORD
 3. Go to **Workflows** → **Import from File**
-4. Upload `n8n/ghost-audio-workflow.json`
-5. The workflow will appear with all nodes connected
+4. Upload `n8n/workflows/ghost-audio-pipeline.json` and `n8n/workflows/ghost-audio-callback.json`
+5. The workflows will appear with all nodes connected
 
-### Step 9: Set Up n8n Credentials
+### Step 7: Set Up n8n Credentials
 
 In n8n UI → **Settings** → **Credentials**:
 
@@ -639,9 +640,9 @@ In n8n UI → **Settings** → **Credentials**:
 - Or use Service Account: paste your JSON key contents
 - Test it by running the GCS node manually
 
-**Note on vLLM API URL:** In the "Convert to Narration" node, the URL is `http://localhost:8000/v1/chat/completions`. If your vLLM container is named differently (e.g., `vllm`), change it to `http://vllm:8000/v1/chat/completions`. Check with `docker ps` what your vLLM container is called.
+**Note on vLLM API URL:** In the "Convert to Narration" node, the URL is `http://localhost:8001/v1/chat/completions`. If your vLLM container is named differently (e.g., `vllm`), change it to `http://vllm:8001/v1/chat/completions`. Check with `docker ps` what your vLLM container is called.
 
-### Step 10: Set Environment Variables in n8n Workflow
+### Step 8: Set Environment Variables in n8n Workflow
 
 In the workflow, find the **"Build GCS Path"** Code node and verify these match your `.env`:
 ```javascript
@@ -919,7 +920,7 @@ gsutil cors set /tmp/cors.json gs://YOUR_BUCKET_NAME/
 ### Test 1: TTS Service Health
 ```bash
 curl http://localhost:8020/health
-# Expected: {"status":"healthy","device":"cpu","model":"xtts_v2","voice_sample":true,"model_loaded":true,...}
+# Expected: {"status":"healthy","device":"cpu","model":"fish-speech-1.5","voice_sample":true,"model_loaded":true,...}
 
 # Readiness check:
 curl http://localhost:8020/health/ready
@@ -942,7 +943,7 @@ curl -o test.mp3 http://localhost:8020/tts/download/manual-test
 ### Test 3: vLLM Connection (from n8n container)
 ```bash
 docker exec n8n wget -qO- \
-    http://vllm:8000/v1/models     # Replace 'vllm' with your container name
+    http://vllm:8001/v1/models     # Replace 'vllm' with your container name
 ```
 
 ### Test 4: End-to-End Trigger
@@ -964,7 +965,7 @@ In n8n UI, open the workflow → click **"Test Workflow"** → manually trigger 
 
 ### Common Issues
 
-**TTS service takes too long to start:** XTTS v2 downloads ~2GB on first run. Check logs: `docker logs tts-service`
+**TTS service takes too long to start:** Fish Speech v1.5 downloads ~7GB on first run. Check logs: `docker logs tts-service`
 
 **n8n can't reach vLLM:** Check container names with `docker ps`. Both must be on the same Docker network. Update the vLLM URL in the "Convert to Narration" node to use the container name instead of `localhost`.
 
@@ -980,7 +981,7 @@ In n8n UI, open the workflow → click **"Test Workflow"** → manually trigger 
 |---|---|---|
 | Compute Engine (L4 GPU) | Existing | Already paying for it |
 | n8n | $0 | Open source, runs in Docker |
-| Coqui XTTS v2 | $0 | Open source, runs locally |
+| Fish Speech v1.5 | $0 | Open source, runs locally |
 | vLLM + Qwen-3-14b | $0 | Already running |
 | GCS Storage | ~$0.02/GB/month | 1000 articles × 5MB avg = 5GB = $0.10/month |
 | GCS Egress | ~$0.08/GB | Pay for bandwidth when people listen |

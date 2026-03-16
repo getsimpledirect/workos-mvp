@@ -17,7 +17,7 @@
 #   - N8N_PASSWORD: n8n admin password
 #   - N8N_ENCRYPTION_KEY: n8n encryption key (openssl rand -hex 32)
 #   - GCS_BUCKET_NAME: GCS bucket for audio storage
-#   - VLLM_BASE_URL: URL to vLLM API (default: http://host.docker.internal:8000)
+#   - VLLM_BASE_URL: URL to vLLM API (default: http://host.docker.internal:8001/v1)
 #   - VLLM_MODEL_NAME: Model name for vLLM (e.g., Qwen/Qwen3-14B)
 #
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -81,7 +81,7 @@ services:
       # Timezone
       - GENERIC_TIMEZONE=${TIMEZONE:-UTC}
       # External services (passed to workflow)
-      - VLLM_BASE_URL=${VLLM_BASE_URL:-http://host.docker.internal:8001}
+      - VLLM_BASE_URL=${VLLM_BASE_URL:-http://host.docker.internal:8001/v1}
       - VLLM_MODEL_NAME=${VLLM_MODEL_NAME:-Qwen/Qwen3-14B}
       - TTS_SERVICE_URL=http://tts-service:8020
       # Ghost API Keys (for fetching article content and updating posts)
@@ -121,7 +121,7 @@ services:
       # TTS configuration
       - VOICE_SAMPLE_PATH=/app/voices/reference.wav
       - TTS_LANGUAGE=en
-      - MAX_CHUNK_WORDS=50
+      - MAX_CHUNK_WORDS=200
       - DEVICE=${TTS_DEVICE:-cuda}
       # MAX_WORKERS is used for CPU mode parallel synthesis
       - MAX_WORKERS=${MAX_WORKERS:-4}

@@ -406,7 +406,7 @@ The `/health` endpoint shows storage status:
 {
   "status": "healthy",
   "device": "cpu",
-  "model": "xtts_v2",
+  "model": "fish-speech-1.5",
   "voice_sample": true,
   "model_loaded": true,
   "job_store": "redis",
@@ -472,7 +472,7 @@ The `/health` endpoint includes performance metrics:
 {
   "status": "healthy",
   "device": "cpu",
-  "model": "xtts_v2",
+  "model": "fish-speech-1.5",
   "voice_sample": true,
   "model_loaded": true,
   "job_store": "redis",
@@ -495,11 +495,11 @@ This means you're trying to install on Python 3.12+. Solution:
 
 ### Model download fails
 
-First run downloads ~1.9 GB of XTTS-v2 weights. If it fails:
+First run downloads ~4 GB of Fish Speech v1.5 weights. If it fails:
 
 ```bash
 # Pre-download inside container
-docker exec -it tts-service python -c "from TTS.api import TTS; TTS('tts_models/multilingual/multi-dataset/xtts_v2')"
+docker exec -it tts-service python -m fish_speech.models.dac.inference --help
 ```
 
 ### Out of memory errors
@@ -589,7 +589,7 @@ tts-service/
 │   ├── core/                  # Core functionality
 │   │   ├── __init__.py
 │   │   ├── exceptions.py      # Custom exception classes
-│   │   └── tts_engine.py      # XTTS-v2 engine wrapper
+│   │   └── tts_engine.py      # Fish Speech v1.5 engine wrapper
 │   │
 │   ├── models/                # Pydantic schemas
 │   │   ├── __init__.py
@@ -625,7 +625,7 @@ tts-service/
 |--------|-------------|
 | `app/main.py` | FastAPI app initialization, lifecycle management |
 | `app/config.py` | Centralized configuration from environment variables |
-| `app/core/tts_engine.py` | Thread-safe XTTS-v2 wrapper with singleton pattern |
+| `app/core/tts_engine.py` | Thread-safe Fish Speech v1.5 wrapper with singleton pattern |
 | `app/core/exceptions.py` | Domain-specific exception hierarchy |
 | `app/services/job_store.py` | Job persistence with Redis + in-memory fallback |
 | `app/services/synthesis.py` | Parallel/sequential chunk synthesis |
@@ -671,13 +671,13 @@ Part of the Ghost Narrator project. See main repository LICENSE.
 
 For issues specific to:
 - **TTS service**: Open issue in this repository
-- **XTTS-v2 model**: See [Coqui TTS GitHub](https://github.com/coqui-ai/TTS)
+- **Fish Speech model**: See [Fish Speech GitHub](https://github.com/fishaudio/fish-speech)
 - **Voice cloning quality**: Check reference WAV quality first
 
 ## Credits
 
 Built with:
-- [Coqui XTTS-v2](https://github.com/coqui-ai/TTS) - Voice cloning model
+- [Fish Speech v1.5](https://github.com/fishaudio/fish-speech) - Voice cloning model
 - [FastAPI](https://fastapi.tiangolo.com/) - API framework
 - [pydub](https://github.com/jiaaro/pydub) - Audio processing
 - [Google Cloud Storage](https://cloud.google.com/storage) - Audio hosting

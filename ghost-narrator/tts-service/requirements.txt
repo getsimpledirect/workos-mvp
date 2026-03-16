@@ -1,10 +1,10 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 # TTS Service Requirements
 # ═══════════════════════════════════════════════════════════════════════════════
-# Python Version: 3.11 (required by TTS library)
+# Python Version: 3.11 (required by Fish Speech)
 #
 # ⚠️ IMPORTANT: DO NOT install these dependencies on Python 3.12+
-# The TTS library only supports Python 3.9-3.11
+# Fish Speech officially supports Python 3.9-3.11
 #
 # Use Docker to run this service (see QUICKSTART.md):
 #   .\run-docker.ps1 -Detached

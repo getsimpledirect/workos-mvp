@@ -12,7 +12,7 @@ import re
 from typing import Final
 
 # Default maximum words per chunk (40-60 words = 8-12 second audio segments)
-DEFAULT_MAX_CHUNK_WORDS: Final[int] = 50
+DEFAULT_MAX_CHUNK_WORDS: Final[int] = 200
 
 # Transition words that suggest a new topic/paragraph boundary
 _TRANSITION_STARTERS: Final[tuple[str, ...]] = (
