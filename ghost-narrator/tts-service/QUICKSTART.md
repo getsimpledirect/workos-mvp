@@ -22,14 +22,14 @@ cd ghost-narrator\tts-service
 mkdir voices
 
 # Add your voice file (rename it to reference.wav)
-# Requirements: WAV format, 44.1 kHz (recommended), mono, 45-60s
+# Requirements: WAV format, 22.05 kHz, mono, 45-60s
 # The system will automatically transcribe this file on first boot.
 ```
 
 **Convert any audio to the correct format:**
 
 ```bash
-ffmpeg -i your-voice.mp3 -ar 22050 -ac 1 voices/reference.wav
+ffmpeg -i your-voice.mp3 -ar 22050 -ac 1 -c:a pcm_s16le voices/reference.wav
 ```
 
 ---
@@ -145,7 +145,8 @@ $body = @{
 } | ConvertTo-Json
 
 Invoke-RestMethod -Method Post -Uri "http://localhost:8020/tts/generate" -Body $body -ContentType "application/json"
-# Note: First run will trigger an automatic calibration of your reference voice.
+# Note: First run triggers one-time reference voice calibration (~30-60 seconds).
+# Subsequent requests use the calibrated voice immediately.
 ```
 
 ```bash
@@ -292,22 +293,40 @@ Another service is using port 8020. Stop it or change the port:
 
 ### Slow generation (3-5 minutes per article)
 
-This is normal for CPU mode. For faster generation:
+This is normal for CPU mode with default settings. For faster generation:
 
-1. Use GPU mode (requires NVIDIA GPU with 4GB+ VRAM):
+1. **Enable parallel processing** (recommended):
+   ```powershell
+   # Quad-core CPU
+   $env:MAX_WORKERS = "4"
+   
+   # Octa-core CPU
+   $env:MAX_WORKERS = "8"
+   
+   .\run-docker.ps1 -Rebuild
+   ```
+   With 4 workers: ~50-60 seconds per 2000 words (vs 3-5 minutes sequential)
+
+2. Use GPU mode (requires NVIDIA GPU with 4GB+ VRAM):
    ```powershell
    $env:TTS_DEVICE = "cuda"
    .\run-docker.ps1 -Rebuild
    ```
+   GPU mode: ~20-30 seconds per 2000 words
 
-2. Reduce chunk size:
+3. Reduce chunk size for better pronunciation:
    ```powershell
    $env:MAX_CHUNK_WORDS = "150"
    ```
 
-### First run is slightly slower
-The first run transcribes your `reference.wav` using Whisper to calibrate the cloning engine. 
-This happens only once and takes ~10-20 seconds.
+### First run calibration
+
+The first synthesis request triggers a one-time reference voice calibration:
+1. Whisper transcribes your reference audio (~10-20 seconds)
+2. DAC codec encodes to VQ tokens (~10-20 seconds)
+3. Calibration artifacts saved for all future requests
+
+**This happens only once at startup.** Subsequent requests use the calibrated voice immediately.
 
 ### Jobs lost after restart
 
@@ -340,16 +359,22 @@ docker logs -f tts-service
 
 | Mode | Device | Speed | Memory | Notes |
 |------|--------|-------|--------|-------|
-| CPU (Sequential) | Any | ~3-5 min/2000 words | 800MB RAM | 1 worker |
-| CPU (Parallel 4x) | Quad-core+ | ~50-60 sec/2000 words | 1GB RAM | **Recommended** |
+| CPU (Sequential) | Any | ~3-5 min/2000 words | 800MB RAM | 1 worker (legacy) |
+| CPU (Parallel 4x) | Quad-core+ | ~50-60 sec/2000 words | 1GB RAM | **Recommended default** |
 | CPU (Parallel 8x) | Octa-core+ | ~30-40 sec/2000 words | 1.2GB RAM | High performance |
-| GPU | NVIDIA L4/T4 | ~20-30 sec/2000 words | 3GB VRAM | Requires GPU config |
+| GPU | NVIDIA L4/T4 | ~20-30 sec/2000 words | 3GB VRAM + 6GB RAM | Requires GPU config |
+
+**Default Configuration:**
+- `TTS_DEVICE=cpu` (safe for all systems)
+- `MAX_WORKERS=4` (parallel synthesis enabled by default)
+- Streaming concatenation auto-enabled for large files (>10 chunks)
 
 **Key Improvements:**
-- ⚡ **Up to 4x faster** on CPU with parallel synthesis
+- ⚡ **Up to 6x faster** on CPU with parallel synthesis (4 workers)
 - 💾 **80% less memory** for large articles (streaming concatenation)
 - 🔗 **Faster uploads** with connection pooling (~50% improvement)
 - 🎯 **Smart processing** adapts to workload automatically
+- 🔄 **Persistent jobs** with Redis (survive container restarts)
 
 ---
 

@@ -11,9 +11,13 @@ Instead, use Docker (recommended) which handles the correct Python version autom
 
 ## 🏗️ Build Information
 
-**First build time**: 15-25 minutes (downloads ~7GB of models)  
+**First build time**: 15-25 minutes (downloads ~4GB of models)  
 **Cached rebuild**: 1-3 minutes  
 **Docker resources required**: 8GB RAM, 20GB disk space
+
+**Runtime Resources:**
+- **CPU Mode (Default)**: ~1GB RAM, configurable parallel workers
+- **GPU Mode**: ~3GB VRAM + ~6GB RAM
 
 The Dockerfile uses a **20-stage dependency installation** process to avoid pip dependency resolution errors. Each stage installs 3-10 packages in dependency order, preventing the exponential complexity that causes `resolution-too-deep` errors.
 
@@ -281,7 +285,7 @@ Response:
 Place your reference voice WAV file in `./voices/reference.wav`:
 
 - **Duration**: 45-60 seconds (minimum 6 seconds, optimal 45+)
-- **Format**: WAV, 22.05 kHz, mono
+- **Format**: WAV, 22.05 kHz, mono, 16-bit PCM
 - **Quality**: Clear speech, no background noise
 - **Content**: Natural speaking, varied intonation
 - **Language**: Must match `TTS_LANGUAGE` setting
@@ -290,10 +294,15 @@ Place your reference voice WAV file in `./voices/reference.wav`:
 
 ```bash
 # Convert any audio to proper format with ffmpeg
-ffmpeg -i input.mp3 -ar 22050 -ac 1 -acodec pcm_s16le voices/reference.wav
+ffmpeg -i input.mp3 -ar 22050 -ac 1 -c:a pcm_s16le voices/reference.wav
 
 # Trim to 45 seconds starting at 10 seconds
-ffmpeg -i input.wav -ss 10 -t 45 -ar 22050 -ac 1 voices/reference.wav
+ffmpeg -i input.wav -ss 10 -t 45 -ar 22050 -ac 1 -c:a pcm_s16le voices/reference.wav
+
+# Verify format
+ffprobe -v quiet -show_entries stream=codec_name,sample_rate,channels \
+  -of default=noprint_wrappers=1 voices/reference.wav
+# Expected: codec_name=pcm_s16le, sample_rate=22050, channels=1
 ```
 
 ## Configuration

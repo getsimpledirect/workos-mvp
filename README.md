@@ -160,7 +160,7 @@ OpenAI-compatible API for local LLM inference.
 
 ```bash
 # Chat completion
-curl http://localhost:8000/v1/chat/completions \
+curl http://localhost:8001/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "Qwen/Qwen3-14B-AWQ",
