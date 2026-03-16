@@ -369,7 +369,7 @@ For detailed documentation, see [README.md](./README.md)
 
 ✅ **No Python downgrade needed** - Docker handles version compatibility  
 ✅ **Zero code changes** - Your Python 3.12 system is unaffected  
-✅ **First-class voice cloning** - XTTS-v2 with 45s reference audio  
+✅ **First-class voice cloning** - Fish Speech v1.5 with 45-60s reference audio  
 ✅ **Production-ready** - Async processing, GCS upload, webhook callbacks  
 ✅ **High performance** - Parallel synthesis, resource pooling, streaming optimization  
 ✅ **Persistent storage** - Redis-backed job state, no data loss on restart
@@ -380,7 +380,7 @@ For detailed documentation, see [README.md](./README.md)
 
 - **API Documentation**: http://localhost:8020/docs (when running)
 - **Full Documentation**: [README.md](./README.md)
-- **XTTS-v2 Model**: https://github.com/coqui-ai/TTS
+- **Fish Speech v1.5**: https://github.com/fishaudio/fish-speech
 - **Docker Documentation**: https://docs.docker.com/
 - **FastAPI Docs**: https://fastapi.tiangolo.com/
 

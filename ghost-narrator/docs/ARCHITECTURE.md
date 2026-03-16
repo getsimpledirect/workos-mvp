@@ -8,16 +8,17 @@
 
 1. [What This Pipeline Does](#what-this-pipeline-does)
 2. [Architecture Overview](#architecture-overview)
-3. [Component Deep Dive](#component-deep-dive)
-4. [VRAM Budget & Resource Planning](#vram-budget--resource-planning)
-5. [Directory Structure](#directory-structure)
-6. [Step-by-Step Setup](#step-by-step-setup)
-7. [n8n Workflow — Node-by-Node Explanation](#n8n-workflow--node-by-node-explanation)
-8. [Ghost Webhook Configuration](#ghost-webhook-configuration)
-9. [Voice Clone Preparation](#voice-clone-preparation)
-10. [GCS Bucket & IAM Setup](#gcs-bucket--iam-setup)
-11. [Testing & Troubleshooting](#testing--troubleshooting)
-12. [Cost Analysis](#cost-analysis)
+3. [Build & Deployment](#build--deployment)
+4. [Component Deep Dive](#component-deep-dive)
+5. [VRAM Budget & Resource Planning](#vram-budget--resource-planning)
+6. [Directory Structure](#directory-structure)
+7. [Step-by-Step Setup](#step-by-step-setup)
+8. [n8n Workflow — Node-by-Node Explanation](#n8n-workflow--node-by-node-explanation)
+9. [Ghost Webhook Configuration](#ghost-webhook-configuration)
+10. [Voice Clone Preparation](#voice-clone-preparation)
+11. [GCS Bucket & IAM Setup](#gcs-bucket--iam-setup)
+12. [Testing & Troubleshooting](#testing--troubleshooting)
+13. [Cost Analysis](#cost-analysis)
 
 ---
 
@@ -76,8 +77,239 @@ Every time you publish a post on either of your Ghost websites, this pipeline au
 │                                                                           │
 │  ┌──────────────────────┐       ┌──────────────────────┐                │
 │  │  Ghost CMS Site 1    │       │  Ghost CMS Site 2    │                │
-│  │  founderreality.com  │       │  your-second-site.com│                │
-│  │  (sends webhooks)    │       │  (sends webhooks)    │                │
+│  │  │  founderreality.com  │       │  your-second-site.com│                │
+│  │  │  (sends webhooks)    │       │  (sends webhooks)    │                │
+│  └──────────────────────┘       └──────────────────────┘                │
+│                                                                           │
+│  ┌──────────────────────────────────────────────────────────────┐       │
+│  │  Google Cloud Storage                                          │       │
+│  │  gs://ghost-narrator/audio/articles/YYYY/MM/DD/slug.mp3      │       │
+│  └──────────────────────────────────────────────────────────────┘       │
+└───────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Build & Deployment
+
+### TTS Service Build Architecture
+
+The TTS service uses a **20-stage Dockerfile** to prevent dependency resolution errors. This approach was specifically designed to solve the `resolution-too-deep` error that occurs when pip tries to resolve 50+ packages with complex version constraints simultaneously.
+
+**Build Strategy:**
+- Each stage installs 3-10 compatible packages in dependency order
+- Packages are grouped by their dependency relationships
+- Each stage verifies installation and cleans up temporary files
+- Total build time: 15-25 minutes (first build), 1-3 minutes (cached)
+
+**Stage Breakdown:**
+1. **Stages 1-2**: Build tools, numpy, scipy (foundation)
+2. **Stages 3-4**: PyTorch ecosystem, Lightning framework
+3. **Stages 5-6**: Transformers, Gradio (pinned to avoid backtracking)
+4. **Stages 7-9**: Audio processing (librosa, soundfile), FastAPI
+5. **Stages 10-19**: Supporting libraries (GCS, Redis, Hydra, speech tools)
+6. **Stage 20**: Fish Speech v1.5 (uses all pre-installed dependencies)
+
+### Resource Requirements
+
+**Minimum for Build:**
+- **RAM**: 8GB allocated to Docker Desktop
+- **Disk Space**: 20GB free (includes base images, layers, models)
+- **Network**: Stable connection (~7GB download for models + packages)
+- **Time**: 15-25 minutes first build, model download can add 5-10 minutes
+
+**Runtime Resources (per docker-compose.yml):**
+- **CPU Mode**: 4GB RAM, 4 CPU cores
+- **GPU Mode**: 6GB RAM, 1 GPU with 2-3GB VRAM
+
+### Deployment via init.sh
+
+The `scripts/init.sh` script handles production deployment with:
+
+**Features:**
+- Automatic GCP secret retrieval and .env synchronization
+- Docker resource validation (memory, disk space)
+- Build retry logic (up to 2 attempts with cache cleanup)
+- Image validation after build
+- Service health monitoring with 5-minute timeout
+- Detailed error messages and troubleshooting guidance
+
+**Usage:**
+```bash
+cd ghost-narrator
+bash scripts/init.sh
+```
+
+The script will:
+1. ✓ Detect and sync GCP secrets to `.env`
+2. ✓ Validate environment variables
+3. ✓ Check Docker resources (memory, disk)
+4. ✓ Build TTS service with retry on failure
+5. ✓ Start all services (Redis → n8n → TTS)
+6. ✓ Wait for health checks (up to 5 minutes)
+7. ✓ Display service URLs and next steps
+
+### Common Build Issues & Solutions
+
+#### 1. Dependency Resolution Error
+```
+error: resolution-too-deep
+× Dependency resolution exceeded maximum depth
+```
+
+**Solution:** Already fixed in Dockerfile. If you still see this:
+- Use `--no-cache` flag: `docker compose build --no-cache tts-service`
+- Ensure you're using the latest Dockerfile (20-stage build)
+- Verify 8GB+ RAM allocated to Docker
+
+#### 2. Out of Memory (Build Killed)
+```
+Killed
+exit code: 137
+```
+
+**Solution:**
+- Increase Docker Desktop memory: Settings → Resources → Memory → 8GB+
+- Close other applications during build
+- Check available system RAM: `free -h` (Linux) or Activity Monitor (Mac)
+
+#### 3. No Space Left on Device
+```
+no space left on device
+write /var/lib/docker: no space left on device
+```
+
+**Solution:**
+```bash
+# Clean Docker system
+docker system prune -a --volumes
+
+# Check disk usage
+docker system df
+
+# Ensure 20GB+ free space
+df -h
+```
+
+#### 4. Network Timeout
+```
+ReadTimeoutError: HTTPSConnectionPool
+Could not fetch URL
+```
+
+**Solution:**
+- Check internet connection stability
+- The Dockerfile already sets `PIP_DEFAULT_TIMEOUT=300` and `PIP_RETRIES=5`
+- If in restricted network, configure pip mirror in Dockerfile
+- Retry build (network issues are often transient)
+
+#### 5. Model Download Warnings
+```
+⚠ Fish Speech model download failed - will download on first use
+```
+
+**Impact:** This is a warning, not a fatal error. Models download automatically when the service starts.
+
+**To pre-download during build:**
+- Ensure stable internet connection during build
+- Models are cached in Docker volume `tts_model_cache`
+- Total download: ~7GB (Fish Speech v1.5 ~4GB + Whisper models ~75MB + dependencies)
+
+### Manual Build (Advanced)
+
+For detailed build output and debugging:
+
+```bash
+cd tts-service
+
+# Build with full progress output
+docker build --progress=plain --no-cache -t ghost-tts-service:latest .
+
+# Test specific stage (e.g., stage 6 - Gradio installation)
+docker build --target=gradio_stage -t test-build .
+
+# Validate built image
+docker run --rm ghost-tts-service:latest python -c "
+import fish_speech
+import torch
+import fastapi
+print('✓ All critical imports successful')
+"
+```
+
+### Production Deployment Checklist
+
+Before deploying to production:
+
+- [ ] GCP secrets configured and synced to `.env`
+- [ ] Voice reference file prepared (`tts-service/voices/reference.wav`)
+- [ ] Docker Desktop allocated 8GB+ RAM
+- [ ] 20GB+ free disk space available
+- [ ] Stable internet connection for initial build
+- [ ] Firewall allows ports: 5678 (n8n), 8020 (TTS), 6379 (Redis)
+- [ ] Ghost webhook URLs configured in Ghost admin
+- [ ] GCS bucket created with proper IAM permissions
+- [ ] VLLM service running and accessible at configured URL
+
+### Build Performance
+
+**Measured Build Times (GCP L4 VM):**
+- First build (no cache): 18-22 minutes
+- Rebuild with cache (code changes only): 45-90 seconds
+- Model download on first run: 5-8 minutes
+
+**Build Stages Most Likely to Timeout:**
+- Stage 6 (Gradio): Complex dependency resolution
+- Stage 17 (modelscope/funasr): Large package downloads
+- Stage 20 (fish-speech): GitHub clone and setup
+
+**Optimization Tips:**
+- Use `--cache-from` to leverage CI/CD build cache
+- Pre-pull base image: `docker pull pytorch/pytorch:2.4.1-cuda12.1-cudnn9-runtime`
+- Keep Docker in good health: `docker system prune` weekly
+
+### Verifying Successful Build
+
+After build completes, verify the installation:
+
+```bash
+# Quick validation
+docker run --rm ghost-tts-service:latest python -c "import fish_speech; print('OK')"
+
+# Full validation
+docker run --rm ghost-tts-service:latest python -c "
+packages = ['fish_speech', 'torch', 'transformers', 'fastapi', 'google.cloud.storage', 'redis', 'librosa']
+for pkg in packages:
+    __import__(pkg)
+    print(f'✓ {pkg}')
+print('✓ All packages validated')
+"
+
+# Check service starts
+docker compose up tts-service
+# Wait 2-3 minutes for startup
+curl http://localhost:8020/health
+```
+
+Expected response:
+```json
+{"status": "healthy", "service": "tts-service", "version": "1.0.0"}
+```
+
+---
+
+## Component Deep Dive
+
+### TTS Service (Fish Speech v1.5)
+
+**Technology Stack:**
+- **Engine**: Fish Speech v1.5 (state-of-the-art zero-shot TTS)
+- **Framework**: FastAPI + Uvicorn
+- **Audio Processing**: librosa, soundfile, pydub
+- **Storage**: Google Cloud Storage (GCS)
+- **Job Queue**: Redis for async job tracking
+
+**Key Features:**
 │  └──────────────────────┘       └──────────────────────┘                │
 │                                                                           │
 │  ┌──────────────────────────────────────────────────────────────┐       │

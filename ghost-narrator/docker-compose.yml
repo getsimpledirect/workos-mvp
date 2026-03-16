@@ -133,6 +133,7 @@ services:
       # Redis job store
       - REDIS_URL=redis://redis:6379/0
       - REDIS_JOB_TTL=${REDIS_JOB_TTL:-86400}
+    volumes:
       - ./tts-service/voices:/app/voices:ro
       - tts_output:/app/output
     networks:

@@ -15,50 +15,124 @@ setuptools==68.2.2
 wheel==0.44.0
 pip>=24.0
 
+# ── PyTorch Stack (Pinned to stable CUDA 12.1 compatible versions) ────────────
+torch==2.4.1
+torchaudio==2.4.1
+torchvision==0.19.1
+triton==3.0.0
+numpy==1.26.4  # Downgrade from 2.1.1 for compatibility
+
 # ── Transformers (Optimized for LLaMA-based TTS) ──────────────────────────────
-# Version 4.45.2 is the stable baseline for Fish Speech v1.5
 transformers==4.45.2
+tokenizers>=0.20.0,<0.21
+safetensors>=0.4.1
+
+# ── Lightning Stack (Pinned for stability) ────────────────────────────────────
+lightning==2.2.5
+pytorch-lightning==2.2.5
+lightning-utilities==0.11.2
+torchmetrics==1.4.0
+
+# ── Gradio (Pinned to avoid resolution conflicts) ─────────────────────────────
+gradio==5.1.0
+gradio-client==1.4.0
 
 # ── Core TTS Engine (Studio Quality) ──────────────────────────────────────────
 # Fish Speech v1.5 for high-fidelity zero-shot voice cloning
-# Note: Pulled from GitHub as v1.5.0 is not yet available on PyPI
 fish-speech @ git+https://github.com/fishaudio/fish-speech.git@v1.5.0
-openai-whisper          # Used for auto-transcribing reference audio
+openai-whisper>=20231117
 
 # ── API Framework ──────────────────────────────────────────────────────────────
 fastapi==0.111.0
 uvicorn[standard]==0.30.1
 pydantic==2.9.2
+pydantic-core==2.23.4
 pydantic-settings>=2.5.0
+starlette==0.37.2
+httptools>=0.5.0
+uvloop>=0.14.0
+watchfiles>=0.13
+websockets>=10.4
+python-dotenv>=0.13
 
 # ── Audio Processing ───────────────────────────────────────────────────────────
-pydub==0.25.1           # Audio concatenation and MP3 encoding
-soundfile==0.12.1       # WAV I/O (used internally by XTTS-v2)
+pydub==0.25.1
+soundfile==0.12.1
+librosa==0.10.2
+resampy>=0.4.3
+audioread>=2.1.9
+numba==0.60.0  # Pin for librosa compatibility
+llvmlite==0.43.0  # Pin for numba compatibility
 
 # ── Google Cloud Storage ───────────────────────────────────────────────────────
 google-cloud-storage==2.16.0
 google-auth==2.29.0
-google-crc32c==1.6.0     # Pinned to stable binary version to prevent build errors
+google-crc32c==1.6.0
+google-api-core>=2.15.0
+google-cloud-core>=2.3.0
+googleapis-common-protos>=1.56.3
+protobuf>=4.25.8,<5.0
 
 # ── HTTP Client ────────────────────────────────────────────────────────────────
-httpx==0.27.0           # Async HTTP for n8n callbacks
+httpx==0.27.0
+httpcore==1.0.9
+h11>=0.8
+anyio>=3.0.0
+sniffio>=1.0.0
 
 # ── Redis (Job State Persistence) ──────────────────────────────────────────────
-redis==5.0.1            # Redis client for persistent job storage
+redis==5.0.1
 
 # ── Utilities ──────────────────────────────────────────────────────────────────
-python-multipart==0.0.9 # Required for FastAPI file uploads
+python-multipart==0.0.9
 typing-extensions==4.11.0
+rich>=13.5.3
+loguru>=0.6.0
+einops>=0.7.0
+einx[torch]==0.2.2
 
-# ── Additional TTS Dependencies (auto-installed but pinned for stability) ──────
-numpy>=1.24.4
+# ── Data Processing ────────────────────────────────────────────────────────────
+datasets==2.18.0
+pandas>=2.0.0
+pyarrow>=12.0.0
+fsspec[http]>=2023.1.0,<=2024.2.0
+dill>=0.3.0,<0.3.9
+xxhash>=3.0.0
+multiprocess>=0.70.0
+
+# ── Hydra Configuration ────────────────────────────────────────────────────────
+hydra-core>=1.3.2
+omegaconf>=2.2,<2.4
+antlr4-python3-runtime==4.9.*
+
+# ── Additional TTS Dependencies ───────────────────────────────────────────────
 scipy>=1.11.0
-librosa>=0.10.0
-numba>=0.57.0
 inflect==7.0.0
-huggingface-hub>=0.28.0  # Required for transformers 4.45.2 compatibility
+huggingface-hub>=0.36.0
 anyascii==0.3.2
 gruut[de,es,fr]==2.2.3
 bangla==0.0.2
 bnnumerizer==0.0.2
 bnunicodenormalizer==0.1.6
+tiktoken>=0.8.0
+sentencepiece>=0.2.0
+
+# ── Model Utilities ────────────────────────────────────────────────────────────
+natsort>=8.4.0
+wandb>=0.15.11
+tensorboard>=2.14.1
+vector-quantize-pytorch==1.14.24
+loralib>=0.1.2
+pyrootutils>=1.0.4
+
+# ── Speech Processing ──────────────────────────────────────────────────────────
+faster-whisper>=1.0.0
+silero-vad>=5.0
+modelscope==1.17.1
+funasr==1.1.5
+opencc-python-reimplemented==0.1.7
+
+# ── System Utilities ───────────────────────────────────────────────────────────
+grpcio>=1.58.0
+cachetools>=5.0.0
+ormsgpack>=1.0.0

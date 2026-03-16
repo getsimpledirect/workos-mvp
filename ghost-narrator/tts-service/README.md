@@ -4,10 +4,18 @@ A FastAPI service wrapping **Fish Speech v1.5** for high-fidelity voice cloning 
 
 ## ⚠️ Python Version Compatibility
 
-**IMPORTANT**: This service requires Python 3.9-3.11 due to Coqui TTS library constraints.
+**IMPORTANT**: This service requires Python 3.9-3.11 due to TTS library constraints.
 
 If you have Python 3.12+ on your host system, **DO NOT install dependencies locally**.
 Instead, use Docker (recommended) which handles the correct Python version automatically.
+
+## 🏗️ Build Information
+
+**First build time**: 15-25 minutes (downloads ~7GB of models)  
+**Cached rebuild**: 1-3 minutes  
+**Docker resources required**: 8GB RAM, 20GB disk space
+
+The Dockerfile uses a **20-stage dependency installation** process to avoid pip dependency resolution errors. Each stage installs 3-10 packages in dependency order, preventing the exponential complexity that causes `resolution-too-deep` errors.
 
 ## Quick Start (Docker - Recommended)
 
@@ -41,6 +49,126 @@ docker run -d \
   -e DEVICE=cpu \
   ghost-tts-service:latest
 ```
+
+## 🔧 Build Troubleshooting
+
+### Common Build Errors
+
+#### 1. Dependency Resolution Error
+
+**Symptom:**
+```
+error: resolution-too-deep
+× Dependency resolution exceeded maximum depth
+```
+
+**Cause:** Pip cannot resolve the complex dependency graph when installing 50+ packages simultaneously.
+
+**Solution:** This is already fixed in the Dockerfile using staged installation. If you still see this:
+- Ensure you're building with `--no-cache` flag
+- Check you're using the latest Dockerfile
+- Verify Docker has 8GB+ RAM allocated
+
+#### 2. Out of Memory During Build
+
+**Symptom:**
+```
+Killed
+The command '/bin/sh -c pip install...' returned a non-zero code: 137
+```
+
+**Solution:**
+1. Increase Docker Desktop memory allocation:
+   - **Windows/Mac**: Docker Desktop → Settings → Resources → Memory → 8GB+
+   - **Linux**: Edit `/etc/docker/daemon.json` and add `"default-runtime": "runc"`
+2. Close other applications during build
+3. If problem persists, build on a machine with more RAM
+
+#### 3. Disk Space Error
+
+**Symptom:**
+```
+no space left on device
+write /var/lib/docker: no space left on device
+```
+
+**Solution:**
+1. Clean Docker system:
+   ```bash
+   docker system prune -a --volumes
+   ```
+2. Ensure at least 20GB free disk space
+3. Check Docker Desktop disk image size limit (Settings → Resources → Disk)
+
+#### 4. Network Timeout
+
+**Symptom:**
+```
+Could not fetch URL
+ReadTimeoutError: HTTPSConnectionPool
+```
+
+**Solution:**
+1. Check internet connection
+2. Retry the build (timeout settings are already configured in Dockerfile)
+3. If in restricted network, configure pip mirror in Dockerfile:
+   ```dockerfile
+   ENV PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+   ```
+
+#### 5. fish-speech Installation Fails
+
+**Symptom:**
+```
+ERROR: Could not find a version that satisfies the requirement fish-speech
+fatal: unable to access 'https://github.com/fishaudio/fish-speech.git/'
+```
+
+**Solution:**
+1. Verify GitHub access: `git ls-remote https://github.com/fishaudio/fish-speech.git`
+2. Check all previous build stages completed successfully
+3. If GitHub is blocked, use a specific commit hash instead of tag in Dockerfile
+
+#### 6. Model Download Fails
+
+**Symptom:**
+```
+Warning: Could not download Fish Speech model
+```
+
+**Solution:**
+This is a warning, not an error. Models will download on first API call. To pre-download during build:
+1. Ensure stable internet connection during build
+2. The build continues successfully even if model download fails
+3. Models download automatically on container startup
+
+### Manual Build (Detailed Output)
+
+To see detailed build output for debugging:
+
+```bash
+cd tts-service
+docker build --progress=plain --no-cache -t ghost-tts-service:latest .
+```
+
+### Build Architecture
+
+The Dockerfile uses a **staged installation approach** to prevent dependency resolution errors:
+
+1. **Stage 1-2**: Build tools and core scientific stack (numpy, scipy)
+2. **Stage 3-4**: PyTorch ecosystem and ML frameworks
+3. **Stage 5-6**: Transformers and Gradio (pinned versions)
+4. **Stage 7-9**: Audio processing and FastAPI
+5. **Stage 10-19**: Supporting libraries and utilities
+6. **Stage 20**: Fish Speech (uses pre-installed dependencies)
+
+Each stage:
+- Installs 3-10 compatible packages
+- Verifies installation with import test
+- Cleans up temporary files
+- Takes 30-90 seconds
+
+This approach reduces pip resolution complexity from O(n!) to O(n), making builds reliable and predictable.
 
 ## Local Development (Only if you have Python 3.11)
 
