@@ -442,8 +442,18 @@ class TTSEngine:
             if fake_wav.exists():
                 # Ensure output directory exists
                 Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-                fake_wav.rename(output_path)
-                logger.debug(f"Audio decoded to: {output_path}")
+
+                # Use shutil.copy2 then unlink for cross-filesystem safety
+                # rename() fails across Docker volumes with "Invalid cross-device link"
+                import shutil
+                try:
+                    fake_wav.rename(output_path)
+                except OSError:
+                    # Cross-device link error - copy then delete instead
+                    shutil.copy2(str(fake_wav), str(output_path))
+                    fake_wav.unlink()
+
+                logger.info(f"Audio decoded to: {output_path}")
             else:
                 raise SynthesisError(
                     "Audio file not generated",
