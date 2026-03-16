@@ -10,27 +10,26 @@
 #   .\run-docker.ps1 -Detached
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# ── PyTorch (GPU/CUDA version) ────────────────────────────────────────────────
-# Using PyTorch with CUDA support for high-speed synthesis.
-#
-# NOTE: The Dockerfile uses pytorch/pytorch base image which already includes
-# CUDA-enabled torch and torchaudio.
-torch==2.1.2
-torchaudio==2.1.2
+# ── Build Tools (Pinned for legacy pkg_resources support) ─────────────
+setuptools==68.2.2
+wheel==0.44.0
+pip>=24.0
 
-# ── Transformers (pinned for TTS compatibility) ────────────────────────────────
-# Version 4.33.0 required - newer versions cause BeamSearchScorer import errors
-transformers==4.33.0
+# ── Transformers (Optimized for LLaMA-based TTS) ──────────────────────────────
+# Version 4.45.2 is the stable baseline for Fish Speech v1.5
+transformers==4.45.2
 
-# ── Core TTS Engine ────────────────────────────────────────────────────────────
-# Coqui TTS with XTTS-v2 voice cloning model
-TTS==0.22.0
+# ── Core TTS Engine (Studio Quality) ──────────────────────────────────────────
+# Fish Speech v1.5 for high-fidelity zero-shot voice cloning
+# Note: Pulled from GitHub as v1.5.0 is not yet available on PyPI
+fish-speech @ git+https://github.com/fishaudio/fish-speech.git@v1.5.0
+openai-whisper          # Used for auto-transcribing reference audio
 
 # ── API Framework ──────────────────────────────────────────────────────────────
 fastapi==0.111.0
 uvicorn[standard]==0.30.1
-pydantic==2.8.2
-pydantic-settings==2.3.4
+pydantic==2.9.2
+pydantic-settings>=2.5.0
 
 # ── Audio Processing ───────────────────────────────────────────────────────────
 pydub==0.25.1           # Audio concatenation and MP3 encoding
@@ -39,6 +38,7 @@ soundfile==0.12.1       # WAV I/O (used internally by XTTS-v2)
 # ── Google Cloud Storage ───────────────────────────────────────────────────────
 google-cloud-storage==2.16.0
 google-auth==2.29.0
+google-crc32c==1.6.0     # Pinned to stable binary version to prevent build errors
 
 # ── HTTP Client ────────────────────────────────────────────────────────────────
 httpx==0.27.0           # Async HTTP for n8n callbacks
@@ -49,14 +49,14 @@ redis==5.0.1            # Redis client for persistent job storage
 # ── Utilities ──────────────────────────────────────────────────────────────────
 python-multipart==0.0.9 # Required for FastAPI file uploads
 typing-extensions==4.11.0
-setuptools==69.5.1      # Required for pkg_resources (used by librosa)
 
 # ── Additional TTS Dependencies (auto-installed but pinned for stability) ──────
-numpy==1.22.0           # TTS 0.22.0 requires 1.22.0 on Python 3.10
-scipy>=1.10.1
+numpy>=1.24.4
+scipy>=1.11.0
 librosa>=0.10.0
 numba>=0.57.0
 inflect==7.0.0
+huggingface-hub>=0.28.0  # Required for transformers 4.45.2 compatibility
 anyascii==0.3.2
 gruut[de,es,fr]==2.2.3
 bangla==0.0.2

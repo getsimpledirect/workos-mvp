@@ -43,7 +43,25 @@ async def run_tts_job(
     text: str,
     gcs_object_path: str,
 ) -> None:
-    """Execute the complete TTS pipeline with parallel processing and optimizations."""
+    """
+    Execute the complete TTS pipeline with parallel processing and optimizations.
+
+    This orchestrator manages:
+    1. Status tracking via JobStore (Redis).
+    2. Zero-shot voice calibration (Whisper).
+    3. Multi-stage synthesis (LLaMA + Firefly).
+    4. Audio post-processing (Normalization + Mastering).
+    5. Cloud persistence (GCS) and external notifications (n8n).
+
+    Args:
+        job_id: Unique identifier for tracking and file storage.
+        text: The raw text content to be synthesized.
+        gcs_object_path: The target destination path in the GCS bucket.
+
+    Raises:
+        JobDeletedError: If the job is removed by a user during processing.
+        RuntimeError: For fatal pipeline initialization or processing failures.
+    """
     start_time = time.time()
     loop = asyncio.get_event_loop()
     job_dir = OUTPUT_DIR / job_id
@@ -132,10 +150,9 @@ async def run_tts_job(
 
         # Step 2: Synthesize chunks to WAV files
         await _check_status()
-        # Sequential synthesis is safer for memory (XTTS v2 is heavy) and 
-        # doesn't lose speed because the engine uses a lock anyway.
-        from app.services.synthesis import synthesize_chunks_sequential
-        chunk_wav_paths = await synthesize_chunks_sequential(
+        # Use auto-selection for parallel (CPU) vs sequential (GPU)
+        from app.services.synthesis import synthesize_chunks_auto
+        chunk_wav_paths = await synthesize_chunks_auto(
             chunks=chunks,
             job_dir=job_dir,
             job_id=job_id,

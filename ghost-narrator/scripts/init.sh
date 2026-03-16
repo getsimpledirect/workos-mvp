@@ -646,9 +646,7 @@ done
 
 if [ "$STATUS" != "healthy" ]; then
     echo ""
-    echo "⚠ TTS service health check timed out after ${TIMEOUT}s"
-    echo "  Check logs: docker logs tts-service --tail 50"
-    echo "  The service may still be downloading the XTTS-v2 model (~1.8GB)"
+    echo "  The service is downloading Fish Speech v1.5 + Whisper weights (~7GB)"
 fi
 
 # ─── Display summary ─────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
-# TTS Service - Voice Cloning Text-to-Speech API
+# TTS Service — Studio-Quality Narration API
 
-A FastAPI service wrapping Coqui XTTS-v2 for high-quality voice cloning and text-to-speech generation.
+A FastAPI service wrapping **Fish Speech v1.5** for high-fidelity voice cloning and professional narration.
 
 ## ⚠️ Python Version Compatibility
 
@@ -78,8 +78,9 @@ N8N_CALLBACK_URL=http://localhost:5678/webhook/tts-complete
 
 1. **POST /tts/generate** - Submit text for TTS generation
 2. Background processing:
-   - Splits text into ≤200-word sentence-boundary chunks
-   - Synthesizes each chunk with XTTS-v2 using reference voice
+   - Automatically transcribes reference audio if needed (Whisper tiny)
+   - Generates semantic tokens using Fish Speech LLaMA model
+   - Decodes high-fidelity audio using Firefly VQ-GAN
    - Concatenates chunks into single MP3 file
    - Uploads to Google Cloud Storage
    - Notifies n8n via callback webhook
@@ -88,8 +89,8 @@ N8N_CALLBACK_URL=http://localhost:5678/webhook/tts-complete
 
 ### Key Features
 
-- **Zero-shot voice cloning**: Clone any voice with just 45 seconds of audio
-- **Multi-lingual support**: English, Spanish, French, German, Italian, Portuguese, Polish, Turkish, Russian, Dutch, Czech, Arabic, Chinese, Japanese, Hungarian, Korean, Hindi
+- **Studio-quality voice cloning**: Zero-shot cloning with expressive prosody
+- **Expressive Narration**: Captures natural breathing and human-like emphasis
 - **Automatic chunking**: Handles long texts by splitting at sentence boundaries
 - **GPU acceleration**: Optional CUDA support for faster generation
 - **Cloud storage**: Automatic upload to Google Cloud Storage
@@ -212,8 +213,8 @@ MAX_WORKERS=16
 - Requires NVIDIA GPU with 4+ GB VRAM
 - Generation time: ~20-40 seconds per 2000-word article
 - Memory: ~3 GB VRAM + 2 GB RAM
-- **Note**: GPU mode uses sequential processing (parallel not beneficial for CUDA)
-- Enable by setting `DEVICE=cuda` and uncommenting GPU config in docker-compose
+- **VRAM Harmony**: Works alongside vLLM. Optimized for NVIDIA L4 (24GB).
+- **GPU Rebalancing**: If using vLLM, ensure `gpu_memory_utilization` is set to `0.7` to provide headroom for the Studio TTS models.
 
 ```yaml
 # In docker-compose.override.yml

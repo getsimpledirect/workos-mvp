@@ -31,7 +31,7 @@ def split_into_chunks(text: str, max_words: int = DEFAULT_MAX_CHUNK_WORDS) -> li
     - Never split mid-sentence
     - Keep sentence-ending punctuation with its sentence (not the next chunk)
     - Chunks of 40-60 words produce 8-12 second audio segments — optimal for
-      XTTS-v2 voice consistency and natural prosody
+      Fish Speech voice consistency and natural prosody
 
     Args:
         text: The input text to split into chunks.

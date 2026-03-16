@@ -1,10 +1,10 @@
 # TTS Service Quick Start Guide
 
-## 🚀 Problem Solved
+## 🚀 Studio-Quality Narration
 
-You have **Python 3.12** on your system, but the TTS library requires **Python 3.11**.
+This service has been upgraded to **Fish Speech v1.5**, delivering professional, studio-quality narration for your Ghost articles.
 
-**Solution**: Run the service in Docker (which has Python 3.11 built-in). No need to downgrade your system Python!
+**Feature**: High-fidelity zero-shot voice cloning with natural prosody and breathing.
 
 ---
 
@@ -22,7 +22,8 @@ cd ghost-narrator\tts-service
 mkdir voices
 
 # Add your voice file (rename it to reference.wav)
-# Requirements: WAV format, 22.05 kHz, mono, 45-60 seconds duration
+# Requirements: WAV format, 44.1 kHz (recommended), mono, 45-60s
+# The system will automatically transcribe this file on first boot.
 ```
 
 **Convert any audio to the correct format:**
@@ -144,6 +145,7 @@ $body = @{
 } | ConvertTo-Json
 
 Invoke-RestMethod -Method Post -Uri "http://localhost:8020/tts/generate" -Body $body -ContentType "application/json"
+# Note: First run will trigger an automatic calibration of your reference voice.
 ```
 
 ```bash
@@ -303,11 +305,9 @@ This is normal for CPU mode. For faster generation:
    $env:MAX_CHUNK_WORDS = "150"
    ```
 
-### First run is very slow
-
-The first run downloads ~2GB of XTTS-v2 model weights. This is cached for future runs.
-
-Expected wait time: 5-10 minutes on first run, then 30-60 seconds on subsequent runs.
+### First run is slightly slower
+The first run transcribes your `reference.wav` using Whisper to calibrate the cloning engine. 
+This happens only once and takes ~10-20 seconds.
 
 ### Jobs lost after restart
 

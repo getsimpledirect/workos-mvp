@@ -5,6 +5,7 @@ param(
     [switch]$Stop,
     [switch]$Logs,
     [switch]$Rebuild,
+    [switch]$Clean,
     [switch]$Help
 )
 
@@ -33,6 +34,7 @@ if ($Help) {
     Write-Host "  .\run-docker.ps1 -Stop        Stop the running container"
     Write-Host "  .\run-docker.ps1 -Logs        View container logs"
     Write-Host "  .\run-docker.ps1 -Rebuild     Force rebuild image"
+    Write-Host "  .\run-docker.ps1 -Clean       Deep clean Docker (prune unused)"
     Write-Host "  .\run-docker.ps1 -Help        Show this help"
     Write-Host ""
     Write-Host "Environment Variables:"
@@ -110,6 +112,25 @@ Write-Host ""
 
 
 Test-Docker
+ 
+if ($Clean) {
+    Write-Info "Performing deep Docker cleanup..."
+    if (docker ps -a --format "{{.Names}}" | Select-String -Pattern "^$CONTAINER_NAME$") {
+        Write-Info "Stopping and removing container..."
+        docker stop $CONTAINER_NAME | Out-Null
+        docker rm $CONTAINER_NAME | Out-Null
+    }
+    if (docker images -q $IMAGE_NAME) {
+        Write-Info "Removing image $IMAGE_NAME..."
+        docker rmi $IMAGE_NAME -f | Out-Null
+    }
+    Write-Info "Pruning unused Docker networks and cache..."
+    docker network prune -f | Out-Null
+    docker system prune -f --filter "label=com.docker.compose.project=tts-service" | Out-Null
+    # Note: We don't prune volumes by default to keep model cache, 
+    # but user can run 'docker volume prune' if needed.
+    Write-Success "✓ Docker environment cleaned."
+}
 
 
 $isRunning = docker ps --format "{{.Names}}" | Select-String -Pattern "^$CONTAINER_NAME$"

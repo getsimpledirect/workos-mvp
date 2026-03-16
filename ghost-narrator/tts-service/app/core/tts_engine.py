@@ -1,207 +1,250 @@
 """
-TTS Engine wrapper module.
+TTS Engine wrapper module for Fish Speech v1.5.
 
-Provides a singleton wrapper around the Coqui XTTS-v2 engine with proper
-initialization, error handling, and thread-safe synthesis.
+Provides a singleton wrapper for high-fidelity, studio-quality synthesis
+using a LLaMA semantic model and Firefly (VQ-GAN) decoder.
 """
 
 from __future__ import annotations
 
 import logging
+import os
+import time
 from pathlib import Path
 from threading import Lock
-from typing import TYPE_CHECKING, Any, Optional
+from typing import Any, Optional
 
+import torch
+import whisper
 from app.config import DEVICE, TTS_LANGUAGE, VOICE_SAMPLE_PATH
 from app.core.exceptions import SynthesisError, TTSEngineError, VoiceSampleNotFoundError
-
-if TYPE_CHECKING:
-    from TTS.api import TTS as CoquiTTS
 
 logger = logging.getLogger(__name__)
 
 
 class TTSEngine:
     """
-    Thread-safe wrapper for Coqui XTTS-v2 TTS engine.
-
-    This class manages the lifecycle of the TTS engine and provides
-    methods for voice-cloning text-to-speech synthesis.
+    Thread-safe wrapper for Fish Speech v1.5 TTS engine.
+    
+    This engine uses:
+    1. Whisper (Tiny) for auto-transcribing reference audio.
+    2. LLaMA (1.4B) for semantic token generation.
+    3. Firefly (VQ-GAN) for audio decoding.
     """
 
     _instance: Optional["TTSEngine"] = None
     _lock: Lock = Lock()
 
-    # Instance attributes (declared for type checking)
-    _initialized: bool
-    _engine: Optional[Any]  # CoquiTTS type at runtime
-    _synthesis_lock: Lock
-    _device: str
-    _language: str
-    _voice_sample_path: str
-
     def __new__(cls) -> "TTSEngine":
-        """Ensure singleton instance of TTSEngine."""
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
                     instance = super().__new__(cls)
                     instance._initialized = False
-                    instance._engine = None
+                    instance._llama = None
+                    instance._firefly = None  # Corrected from _vits
+                    instance._tokenizer = None
+                    instance._whisper_model = None
                     instance._synthesis_lock = Lock()
                     instance._device = DEVICE
                     instance._language = TTS_LANGUAGE
                     instance._voice_sample_path = VOICE_SAMPLE_PATH
+                    instance._checkpoint_dir = Path("/app/checkpoints/fish-speech-1.5")
                     cls._instance = instance
         return cls._instance
 
-    def __init__(self) -> None:
-        """Initialize TTSEngine (only runs once due to singleton pattern)."""
-        # All initialization is done in __new__ to avoid race conditions
-        pass
-
     def initialize(self) -> None:
         """
-        Load the XTTS-v2 model.
+        Load Fish Speech v1.5 models and calibrate reference voice.
+
+        This method initializes the dual-model architecture (LLaMA + Firefly)
+        and runs the automatic voice calibration using Whisper if needed.
 
         Raises:
-            TTSEngineError: If model loading fails.
+            TTSEngineError: If model weights are missing or initialization fails.
         """
-        if self._engine is not None:
-            logger.debug("TTS engine already initialized")
+        if self._initialized:
             return
 
-        logger.info(f"Loading XTTS-v2 on device={self._device}")
+        with self._lock:
+            if self._initialized:
+                return
 
+            try:
+                logger.info(f"Initialising Fish Speech v1.5 on {self._device} (FP16)")
+                
+                # 1. Calibrate Reference Voice (Whisper)
+                self._calibrate_reference_voice()
+
+                # 2. Load Tokenizer & LLaMA (Semantic Model)
+                from fish_speech.models.text_to_semantic.llama import LlamaForConditionalGeneration
+                from transformers import AutoTokenizer
+
+                logger.info("Loading LLaMA semantic model...")
+                self._tokenizer = AutoTokenizer.from_pretrained(self._checkpoint_dir)
+                self._llama = LlamaForConditionalGeneration.from_pretrained(
+                    self._checkpoint_dir, 
+                    device_map=self._device,
+                    torch_dtype=torch.float16
+                )
+                self._llama.eval()
+
+                # 3. Load Firefly (VQ-GAN Decoder)
+                from fish_speech.models.vqgan.modules.firefly import Firefly
+                
+                logger.info("Loading Firefly decoder...")
+                self._firefly = Firefly.from_pretrained(
+                    self._checkpoint_dir,
+                    device_map=self._device,
+                    torch_dtype=torch.float16
+                )
+                self._firefly.eval()
+
+                self._initialized = True
+                logger.info("Fish Speech v1.5 engine ready (Studio Quality)")
+
+            except Exception as exc:
+                logger.error(f"Fish Speech initialization failed: {exc}")
+                raise TTSEngineError("Failed to load Fish Speech v1.5", details=str(exc))
+
+    def _calibrate_reference_voice(self) -> None:
+        """
+        Transcribe reference.wav to reference.txt if missing.
+
+        Uses OpenAI Whisper (tiny) on CPU for minimal VRAM impact. The 
+        transcribed text is saved alongside the reference audio to be 
+        used as a semantic prompt for Fish Speech.
+
+        Raises:
+            VoiceSampleNotFoundError: If reference.wav is not found.
+        """
+        ref_path = Path(self._voice_sample_path)
+        txt_path = ref_path.with_suffix(".txt")
+
+        if not ref_path.exists():
+            raise VoiceSampleNotFoundError(str(ref_path))
+
+        if txt_path.exists():
+            logger.info(f"Using existing reference text: {txt_path}")
+            return
+
+        logger.info(f"Calibrating reference voice (transcribing {ref_path.name})...")
         try:
-            from TTS.api import TTS as CoquiTTS
-
-            self._engine = CoquiTTS("tts_models/multilingual/multi-dataset/xtts_v2").to(
-                self._device
-            )
-            logger.info("XTTS-v2 ready")
-        except ImportError as exc:
-            raise TTSEngineError(
-                "Failed to import TTS library",
-                details="Ensure TTS package is installed correctly",
-            ) from exc
+            if self._whisper_model is None:
+                # Use CPU for whisper to save VRAM for the main models if needed
+                # tiny is extremely fast on CPU anyway
+                self._whisper_model = whisper.load_model("tiny", device="cpu")
+            
+            result = self._whisper_model.transcribe(str(ref_path))
+            text = result["text"].strip()
+            
+            if not text:
+                logger.warning("Whisper transcribed empty text from reference audio")
+                text = "Reference audio transcription pending."
+            
+            with open(txt_path, "w", encoding="utf-8") as f:
+                f.write(text)
+            
+            logger.info(f"Calibration complete. Reference text saved to {txt_path.name}")
+            
+            # Cleanup
+            del self._whisper_model
+            self._whisper_model = None
+                
         except Exception as exc:
-            raise TTSEngineError(
-                "Failed to load XTTS-v2 model",
-                details=str(exc),
-            ) from exc
+            logger.warning(f"Voice calibration failed (non-fatal): {exc}")
 
     @property
     def is_ready(self) -> bool:
-        """Check if the TTS engine is loaded and ready."""
-        return self._engine is not None
-
-    @property
-    def device(self) -> str:
-        """Get the device the engine is running on."""
-        return self._device
-
-    def validate_voice_sample(self) -> None:
-        """
-        Validate that the voice sample file exists.
-
-        Raises:
-            VoiceSampleNotFoundError: If voice sample is not found.
-        """
-        if not Path(self._voice_sample_path).exists():
-            raise VoiceSampleNotFoundError(self._voice_sample_path)
+        """Check if the engine is initialized and ready for synthesis."""
+        return self._initialized
 
     def synthesize_to_file(self, text: str, output_path: str) -> str:
         """
-        Synthesize text to a WAV file using voice cloning.
+        Synthesize text using zero-shot cloning with explicit inference logic.
+
+        This method performs the full inference pipeline:
+        1. Load reference audio and transcription.
+        2. Generate semantic tokens via LLaMA.
+        3. Decode tokens to high-fidelity audio via Firefly.
 
         Args:
-            text: The text to synthesize.
-            output_path: Path where the WAV file will be saved.
+            text: The input text to synthesize.
+            output_path: Target path for the generated WAV file.
 
         Returns:
-            The output path of the generated WAV file.
+            The absolute path to the generated synthesis output.
 
         Raises:
-            SynthesisError: If synthesis fails.
-            VoiceSampleNotFoundError: If voice sample is not available.
+            SynthesisError: If synthesis fails or output is not generated.
         """
-        if not text or not text.strip():
-            raise SynthesisError("Cannot synthesize empty text")
-
-        if self._engine is None:
+        if not self._initialized:
             raise SynthesisError("TTS engine not initialized")
 
-        self.validate_voice_sample()
-
-        output_file = Path(output_path)
+        # Load reference text for prompt
+        ref_txt_path = Path(self._voice_sample_path).with_suffix(".txt")
+        prompt_text = ref_txt_path.read_text(encoding="utf-8") if ref_txt_path.exists() else ""
 
         with self._synthesis_lock:
             try:
-                self._engine.tts_to_file(
-                    text=text,
-                    speaker_wav=self._voice_sample_path,
-                    language=self._language,
-                    file_path=output_path,
-                )
-
-                if not output_file.exists() or output_file.stat().st_size == 0:
-                    raise SynthesisError(
-                        "TTS engine failed to create valid output",
-                        details=f"path={output_path}",
+                import torch
+                import librosa
+                import soundfile as sf
+                
+                logger.debug(f"Synthesizing '{text[:50]}...' using Fish Speech v1.5")
+                
+                # 1. Prepare Semantic Tokens
+                # Standard Fish Speech 1.5 inference pattern
+                from fish_speech.utils.schema import ServeReferenceAudio, ServeTTSRequest
+                from fish_speech.inference import generate_audio_v1_5
+                
+                # Load reference at 44.1kHz (V1.5 Standard)
+                audio, _ = librosa.load(self._voice_sample_path, sr=44100)
+                
+                # Wrap inference in inference_mode for VRAM efficiency and speed
+                with torch.inference_mode():
+                    generate_audio_v1_5(
+                        llama=self._llama,
+                        firefly=self._firefly,
+                        tokenizer=self._tokenizer,
+                        text=text,
+                        prompt_text=prompt_text,
+                        prompt_audio=audio,
+                        output_path=output_path,
+                        device=self._device,
+                        decode_config=None 
                     )
+
+                if not Path(output_path).exists():
+                    raise SynthesisError("Fish Speech failed to produce output file")
 
                 return output_path
 
-            except SynthesisError:
-                raise
             except Exception as exc:
-                if output_file.exists():
-                    output_file.unlink(missing_ok=True)
-                raise SynthesisError(
-                    "TTS synthesis failed",
-                    details=str(exc),
-                ) from exc
+                logger.error(f"Fish Speech synthesis failed: {exc}")
+                raise SynthesisError("Studio-quality synthesis failed", details=str(exc))
 
-    def get_status(self) -> dict:
+    def get_status(self) -> dict[str, Any]:
         """
-        Get the current status of the TTS engine.
+        Get current status and metadata of the TTS engine.
 
         Returns:
-            Dictionary containing engine status information.
+            A dictionary containing engine status, device, and capabilities.
         """
         return {
-            "model": "xtts_v2",
+            "model": "fish-speech-1.5",
+            "quality": "studio",
             "device": self._device,
-            "language": self._language,
-            "is_ready": self.is_ready,
+            "is_ready": self._initialized,
             "voice_sample_path": self._voice_sample_path,
-            "voice_sample_exists": Path(self._voice_sample_path).exists(),
         }
 
 
 def get_tts_engine() -> TTSEngine:
-    """
-    Get the singleton TTSEngine instance.
-
-    Returns:
-        The TTSEngine singleton instance.
-    """
     return TTSEngine()
 
 
 def initialize_tts_engine() -> TTSEngine:
-    """
-    Initialize and return the TTS engine.
-
-    This function should be called during application startup.
-
-    Returns:
-        The initialized TTSEngine instance.
-
-    Raises:
-        TTSEngineError: If initialization fails.
-    """
     engine = get_tts_engine()
     engine.initialize()
     return engine

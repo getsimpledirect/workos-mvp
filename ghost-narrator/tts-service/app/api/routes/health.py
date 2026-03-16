@@ -53,7 +53,7 @@ async def health() -> HealthResponse:
     return HealthResponse(
         status="healthy" if is_healthy else "degraded",
         device=DEVICE,
-        model="xtts_v2",
+        model="fish-speech-1.5",
         voice_sample=voice_ok,
         model_loaded=model_ok,
         job_store=job_store.storage_type,

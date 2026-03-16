@@ -5,7 +5,7 @@
 # Services:
 #   - redis: Job state persistence
 #   - n8n: Workflow orchestration
-#   - tts-service: Voice-cloning TTS API (XTTS-v2)
+#   - tts-service: Studio-quality TTS API (Fish Speech v1.5)
 #
 # Usage:
 #   docker compose up -d
@@ -107,7 +107,7 @@ services:
         reservations:
           memory: 512M
 
-  # ─── TTS Service: Voice-Cloning API ──────────────────────────────────────────
+  # ─── TTS Service: Studio-Quality API ──────────────────────────────────────────
   tts-service:
     build:
       context: ./tts-service
@@ -123,9 +123,8 @@ services:
       - TTS_LANGUAGE=en
       - MAX_CHUNK_WORDS=50
       - DEVICE=${TTS_DEVICE:-cuda}
+      # MAX_WORKERS is used for CPU mode parallel synthesis
       - MAX_WORKERS=${MAX_WORKERS:-4}
-      # Auto-accept Coqui XTTS license (CPML for non-commercial use)
-      - COQUI_TOS_AGREED=1
       # Google Cloud Storage
       - GCS_BUCKET_NAME=${GCS_BUCKET_NAME:-}
       - GCS_AUDIO_PREFIX=${GCS_AUDIO_PREFIX:-audio/articles}
@@ -134,10 +133,8 @@ services:
       # Redis job store
       - REDIS_URL=redis://redis:6379/0
       - REDIS_JOB_TTL=${REDIS_JOB_TTL:-86400}
-    volumes:
       - ./tts-service/voices:/app/voices:ro
       - tts_output:/app/output
-      - tts_model_cache:/root/.local/share/tts
     networks:
       - pipeline_net
     depends_on:
@@ -158,9 +155,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 3G
+          memory: 6G
         reservations:
-          memory: 2G
+          memory: 4G
           devices:
             - driver: nvidia
               count: 1
