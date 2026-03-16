@@ -1,13 +1,25 @@
-# TTS Service - Voice Cloning Text-to-Speech API
+# TTS Service — Studio-Quality Narration API
 
-A FastAPI service wrapping Coqui XTTS-v2 for high-quality voice cloning and text-to-speech generation.
+A FastAPI service wrapping **Fish Speech v1.5** for high-fidelity voice cloning and professional narration.
 
 ## ⚠️ Python Version Compatibility
 
-**IMPORTANT**: This service requires Python 3.9-3.11 due to Coqui TTS library constraints.
+**IMPORTANT**: This service requires Python 3.9-3.11 due to TTS library constraints.
 
 If you have Python 3.12+ on your host system, **DO NOT install dependencies locally**.
 Instead, use Docker (recommended) which handles the correct Python version automatically.
+
+## 🏗️ Build Information
+
+**First build time**: 15-25 minutes (downloads ~4GB of models)  
+**Cached rebuild**: 1-3 minutes  
+**Docker resources required**: 8GB RAM, 20GB disk space
+
+**Runtime Resources:**
+- **CPU Mode (Default)**: ~1GB RAM, configurable parallel workers
+- **GPU Mode**: ~3GB VRAM + ~6GB RAM
+
+The Dockerfile uses a **20-stage dependency installation** process to avoid pip dependency resolution errors. Each stage installs 3-10 packages in dependency order, preventing the exponential complexity that causes `resolution-too-deep` errors.
 
 ## Quick Start (Docker - Recommended)
 
@@ -41,6 +53,126 @@ docker run -d \
   -e DEVICE=cpu \
   ghost-tts-service:latest
 ```
+
+## 🔧 Build Troubleshooting
+
+### Common Build Errors
+
+#### 1. Dependency Resolution Error
+
+**Symptom:**
+```
+error: resolution-too-deep
+× Dependency resolution exceeded maximum depth
+```
+
+**Cause:** Pip cannot resolve the complex dependency graph when installing 50+ packages simultaneously.
+
+**Solution:** This is already fixed in the Dockerfile using staged installation. If you still see this:
+- Ensure you're building with `--no-cache` flag
+- Check you're using the latest Dockerfile
+- Verify Docker has 8GB+ RAM allocated
+
+#### 2. Out of Memory During Build
+
+**Symptom:**
+```
+Killed
+The command '/bin/sh -c pip install...' returned a non-zero code: 137
+```
+
+**Solution:**
+1. Increase Docker Desktop memory allocation:
+   - **Windows/Mac**: Docker Desktop → Settings → Resources → Memory → 8GB+
+   - **Linux**: Edit `/etc/docker/daemon.json` and add `"default-runtime": "runc"`
+2. Close other applications during build
+3. If problem persists, build on a machine with more RAM
+
+#### 3. Disk Space Error
+
+**Symptom:**
+```
+no space left on device
+write /var/lib/docker: no space left on device
+```
+
+**Solution:**
+1. Clean Docker system:
+   ```bash
+   docker system prune -a --volumes
+   ```
+2. Ensure at least 20GB free disk space
+3. Check Docker Desktop disk image size limit (Settings → Resources → Disk)
+
+#### 4. Network Timeout
+
+**Symptom:**
+```
+Could not fetch URL
+ReadTimeoutError: HTTPSConnectionPool
+```
+
+**Solution:**
+1. Check internet connection
+2. Retry the build (timeout settings are already configured in Dockerfile)
+3. If in restricted network, configure pip mirror in Dockerfile:
+   ```dockerfile
+   ENV PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+   ```
+
+#### 5. fish-speech Installation Fails
+
+**Symptom:**
+```
+ERROR: Could not find a version that satisfies the requirement fish-speech
+fatal: unable to access 'https://github.com/fishaudio/fish-speech.git/'
+```
+
+**Solution:**
+1. Verify GitHub access: `git ls-remote https://github.com/fishaudio/fish-speech.git`
+2. Check all previous build stages completed successfully
+3. If GitHub is blocked, use a specific commit hash instead of tag in Dockerfile
+
+#### 6. Model Download Fails
+
+**Symptom:**
+```
+Warning: Could not download Fish Speech model
+```
+
+**Solution:**
+This is a warning, not an error. Models will download on first API call. To pre-download during build:
+1. Ensure stable internet connection during build
+2. The build continues successfully even if model download fails
+3. Models download automatically on container startup
+
+### Manual Build (Detailed Output)
+
+To see detailed build output for debugging:
+
+```bash
+cd tts-service
+docker build --progress=plain --no-cache -t ghost-tts-service:latest .
+```
+
+### Build Architecture
+
+The Dockerfile uses a **staged installation approach** to prevent dependency resolution errors:
+
+1. **Stage 1-2**: Build tools and core scientific stack (numpy, scipy)
+2. **Stage 3-4**: PyTorch ecosystem and ML frameworks
+3. **Stage 5-6**: Transformers and Gradio (pinned versions)
+4. **Stage 7-9**: Audio processing and FastAPI
+5. **Stage 10-19**: Supporting libraries and utilities
+6. **Stage 20**: Fish Speech (uses pre-installed dependencies)
+
+Each stage:
+- Installs 3-10 compatible packages
+- Verifies installation with import test
+- Cleans up temporary files
+- Takes 30-90 seconds
+
+This approach reduces pip resolution complexity from O(n!) to O(n), making builds reliable and predictable.
 
 ## Local Development (Only if you have Python 3.11)
 
@@ -78,8 +210,9 @@ N8N_CALLBACK_URL=http://localhost:5678/webhook/tts-complete
 
 1. **POST /tts/generate** - Submit text for TTS generation
 2. Background processing:
-   - Splits text into ≤200-word sentence-boundary chunks
-   - Synthesizes each chunk with XTTS-v2 using reference voice
+   - Automatically transcribes reference audio if needed (Whisper tiny)
+   - Generates semantic tokens using Fish Speech LLaMA model
+   - Decodes high-fidelity audio using Firefly VQ-GAN
    - Concatenates chunks into single MP3 file
    - Uploads to Google Cloud Storage
    - Notifies n8n via callback webhook
@@ -88,8 +221,8 @@ N8N_CALLBACK_URL=http://localhost:5678/webhook/tts-complete
 
 ### Key Features
 
-- **Zero-shot voice cloning**: Clone any voice with just 45 seconds of audio
-- **Multi-lingual support**: English, Spanish, French, German, Italian, Portuguese, Polish, Turkish, Russian, Dutch, Czech, Arabic, Chinese, Japanese, Hungarian, Korean, Hindi
+- **Studio-quality voice cloning**: Zero-shot cloning with expressive prosody
+- **Expressive Narration**: Captures natural breathing and human-like emphasis
 - **Automatic chunking**: Handles long texts by splitting at sentence boundaries
 - **GPU acceleration**: Optional CUDA support for faster generation
 - **Cloud storage**: Automatic upload to Google Cloud Storage
@@ -152,7 +285,7 @@ Response:
 Place your reference voice WAV file in `./voices/reference.wav`:
 
 - **Duration**: 45-60 seconds (minimum 6 seconds, optimal 45+)
-- **Format**: WAV, 22.05 kHz, mono
+- **Format**: WAV, 22.05 kHz, mono, 16-bit PCM
 - **Quality**: Clear speech, no background noise
 - **Content**: Natural speaking, varied intonation
 - **Language**: Must match `TTS_LANGUAGE` setting
@@ -161,10 +294,15 @@ Place your reference voice WAV file in `./voices/reference.wav`:
 
 ```bash
 # Convert any audio to proper format with ffmpeg
-ffmpeg -i input.mp3 -ar 22050 -ac 1 -acodec pcm_s16le voices/reference.wav
+ffmpeg -i input.mp3 -ar 22050 -ac 1 -c:a pcm_s16le voices/reference.wav
 
 # Trim to 45 seconds starting at 10 seconds
-ffmpeg -i input.wav -ss 10 -t 45 -ar 22050 -ac 1 voices/reference.wav
+ffmpeg -i input.wav -ss 10 -t 45 -ar 22050 -ac 1 -c:a pcm_s16le voices/reference.wav
+
+# Verify format
+ffprobe -v quiet -show_entries stream=codec_name,sample_rate,channels \
+  -of default=noprint_wrappers=1 voices/reference.wav
+# Expected: codec_name=pcm_s16le, sample_rate=22050, channels=1
 ```
 
 ## Configuration
@@ -212,8 +350,8 @@ MAX_WORKERS=16
 - Requires NVIDIA GPU with 4+ GB VRAM
 - Generation time: ~20-40 seconds per 2000-word article
 - Memory: ~3 GB VRAM + 2 GB RAM
-- **Note**: GPU mode uses sequential processing (parallel not beneficial for CUDA)
-- Enable by setting `DEVICE=cuda` and uncommenting GPU config in docker-compose
+- **VRAM Harmony**: Works alongside vLLM. Optimized for NVIDIA L4 (24GB).
+- **GPU Rebalancing**: If using vLLM, ensure `gpu_memory_utilization` is set to `0.7` to provide headroom for the Studio TTS models.
 
 ```yaml
 # In docker-compose.override.yml
@@ -277,7 +415,7 @@ The `/health` endpoint shows storage status:
 {
   "status": "healthy",
   "device": "cpu",
-  "model": "xtts_v2",
+  "model": "fish-speech-1.5",
   "voice_sample": true,
   "model_loaded": true,
   "job_store": "redis",
@@ -343,7 +481,7 @@ The `/health` endpoint includes performance metrics:
 {
   "status": "healthy",
   "device": "cpu",
-  "model": "xtts_v2",
+  "model": "fish-speech-1.5",
   "voice_sample": true,
   "model_loaded": true,
   "job_store": "redis",
@@ -366,11 +504,11 @@ This means you're trying to install on Python 3.12+. Solution:
 
 ### Model download fails
 
-First run downloads ~1.9 GB of XTTS-v2 weights. If it fails:
+First run downloads ~4 GB of Fish Speech v1.5 weights. If it fails:
 
 ```bash
 # Pre-download inside container
-docker exec -it tts-service python -c "from TTS.api import TTS; TTS('tts_models/multilingual/multi-dataset/xtts_v2')"
+docker exec -it tts-service python -m tools.vqgan.inference --help
 ```
 
 ### Out of memory errors
@@ -460,7 +598,7 @@ tts-service/
 │   ├── core/                  # Core functionality
 │   │   ├── __init__.py
 │   │   ├── exceptions.py      # Custom exception classes
-│   │   └── tts_engine.py      # XTTS-v2 engine wrapper
+│   │   └── tts_engine.py      # Fish Speech v1.5 engine wrapper
 │   │
 │   ├── models/                # Pydantic schemas
 │   │   ├── __init__.py
@@ -496,7 +634,7 @@ tts-service/
 |--------|-------------|
 | `app/main.py` | FastAPI app initialization, lifecycle management |
 | `app/config.py` | Centralized configuration from environment variables |
-| `app/core/tts_engine.py` | Thread-safe XTTS-v2 wrapper with singleton pattern |
+| `app/core/tts_engine.py` | Thread-safe Fish Speech v1.5 wrapper with singleton pattern |
 | `app/core/exceptions.py` | Domain-specific exception hierarchy |
 | `app/services/job_store.py` | Job persistence with Redis + in-memory fallback |
 | `app/services/synthesis.py` | Parallel/sequential chunk synthesis |
@@ -542,13 +680,14 @@ Part of the Ghost Narrator project. See main repository LICENSE.
 
 For issues specific to:
 - **TTS service**: Open issue in this repository
-- **XTTS-v2 model**: See [Coqui TTS GitHub](https://github.com/coqui-ai/TTS)
+- **Fish Speech model**: See [Fish Speech GitHub](https://github.com/fishaudio/fish-speech)
 - **Voice cloning quality**: Check reference WAV quality first
 
 ## Credits
 
 Built with:
-- [Coqui XTTS-v2](https://github.com/coqui-ai/TTS) - Voice cloning model
+- [Fish Speech v1.5](https://github.com/fishaudio/fish-speech) - Voice cloning model
 - [FastAPI](https://fastapi.tiangolo.com/) - API framework
 - [pydub](https://github.com/jiaaro/pydub) - Audio processing
 - [Google Cloud Storage](https://cloud.google.com/storage) - Audio hosting
+ 

@@ -21,6 +21,7 @@ DETACHED=false
 STOP=false
 LOGS=false
 REBUILD=false
+CLEAN=false
 HELP=false
 
 while [[ $# -gt 0 ]]; do
@@ -29,6 +30,7 @@ while [[ $# -gt 0 ]]; do
         -s|--stop) STOP=true; shift ;;
         -l|--logs) LOGS=true; shift ;;
         -r|--rebuild) REBUILD=true; shift ;;
+        -c|--clean) CLEAN=true; shift ;;
         -h|--help) HELP=true; shift ;;
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
@@ -45,6 +47,7 @@ if [ "$HELP" = true ]; then
     echo "  ./run-docker.sh --stop       Stop the running container"
     echo "  ./run-docker.sh --logs       View container logs"
     echo "  ./run-docker.sh --rebuild    Force rebuild image"
+    echo "  ./run-docker.sh --clean      Deep clean Docker (prune unused)"
     echo "  ./run-docker.sh --help       Show this help"
     echo ""
     echo "Environment Variables:"
@@ -117,6 +120,22 @@ info "════════════════════════�
 echo ""
 
 check_docker
+ 
+if [ "$CLEAN" = true ]; then
+    info "Performing deep Docker cleanup..."
+    if docker ps -a --format "{{.Names}}" | grep -q "^${CONTAINER_NAME}$"; then
+        info "Stopping and removing container..."
+        docker stop "$CONTAINER_NAME" > /dev/null 2>&1 || true
+        docker rm "$CONTAINER_NAME" > /dev/null 2>&1 || true
+    fi
+    if [ -n "$(docker images -q "$IMAGE_NAME")" ]; then
+        info "Removing image $IMAGE_NAME..."
+        docker rmi "$IMAGE_NAME" -f > /dev/null 2>&1 || true
+    fi
+    info "Pruning unused Docker systems..."
+    docker system prune -f --filter "label=com.docker.compose.project=tts-service" > /dev/null 2>&1 || true
+    success "✓ Docker environment cleaned."
+fi
 
 if docker ps --format "{{.Names}}" | grep -q "^${CONTAINER_NAME}$"; then
     if [ "$REBUILD" = false ]; then
@@ -251,7 +270,7 @@ if [ "$DETACHED" = true ]; then
     echo "  View logs:     ./run-docker.sh --logs"
     echo "  Stop service:  ./run-docker.sh --stop"
     echo ""
-    info "Note: First run will download ~2GB XTTS-v2 model (cached for future runs)."
+    info "Note: First run will download ~4GB Fish Speech v1.5 models (cached for future runs)."
 else
     RUN_ARGS+=("-it")
     info "Starting in foreground mode (Ctrl+C to stop)..."

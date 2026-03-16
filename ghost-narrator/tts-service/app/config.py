@@ -15,7 +15,7 @@ from typing import Final
 # Voice and TTS settings
 VOICE_SAMPLE_PATH: Final[str] = os.environ.get("VOICE_SAMPLE_PATH", "/app/voices/reference.wav")
 TTS_LANGUAGE: Final[str] = os.environ.get("TTS_LANGUAGE", "en")
-MAX_CHUNK_WORDS: Final[int] = int(os.environ.get("MAX_CHUNK_WORDS", "50"))
+MAX_CHUNK_WORDS: Final[int] = int(os.environ.get("MAX_CHUNK_WORDS", "200"))
 DEVICE: Final[str] = os.environ.get("DEVICE", "cuda")
 
 # Google Cloud Storage settings

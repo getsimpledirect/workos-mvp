@@ -1,7 +1,7 @@
 """
-Voice-Cloning Text-to-Speech REST API.
+Studio-Quality Text-to-Speech REST API.
 
-Built on Coqui XTTS-v2 + FastAPI.
+Built on Fish Speech v1.5 + FastAPI.
 """
 
 from __future__ import annotations
@@ -41,20 +41,16 @@ TAGS_METADATA = [
 ]
 
 API_DESCRIPTION = """
-Voice-cloning Text-to-Speech API powered by **XTTS-v2** for Ghost CMS.
+Studio-quality Text-to-Speech API powered by **Fish Speech v1.5** for Ghost CMS.
 
 ## Features
 
-- Voice cloning from reference audio
+- High-fidelity voice cloning (Zero-shot)
+- Natural prosody and breathing
 - Long-form text support (up to 100,000 characters)
 - Google Cloud Storage integration
 - Async job processing with status tracking
-
-## Workflow
-
-1. **POST** `/tts/generate` — Submit text, receive `job_id`
-2. **GET** `/tts/status/{job_id}` — Poll until status is `completed`
-3. **GET** `/tts/download/{job_id}` — Download the audio file
+- Automatic reference voice calibration
 """
 
 

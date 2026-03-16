@@ -12,7 +12,7 @@ import re
 from typing import Final
 
 # Default maximum words per chunk (40-60 words = 8-12 second audio segments)
-DEFAULT_MAX_CHUNK_WORDS: Final[int] = 50
+DEFAULT_MAX_CHUNK_WORDS: Final[int] = 200
 
 # Transition words that suggest a new topic/paragraph boundary
 _TRANSITION_STARTERS: Final[tuple[str, ...]] = (
@@ -31,7 +31,7 @@ def split_into_chunks(text: str, max_words: int = DEFAULT_MAX_CHUNK_WORDS) -> li
     - Never split mid-sentence
     - Keep sentence-ending punctuation with its sentence (not the next chunk)
     - Chunks of 40-60 words produce 8-12 second audio segments — optimal for
-      XTTS-v2 voice consistency and natural prosody
+      Fish Speech voice consistency and natural prosody
 
     Args:
         text: The input text to split into chunks.

@@ -67,7 +67,7 @@ def normalize_chunk_to_target_lufs(
             [
                 "ffmpeg", "-y", "-i", input_wav_path,
                 "-af", f"loudnorm=I={target_lufs}:TP=-1.5:LRA=7",
-                "-ar", "24000",  # Keep XTTS-v2 native sample rate for chunk processing
+                "-ar", "44100",  # Optimized for Fish Speech high-fidelity output
                 "-ac", "1",
                 normalized_path,
             ],
@@ -103,7 +103,7 @@ def apply_final_mastering(input_mp3_path: str, output_mp3_path: str) -> bool:
     1. Trim leading silence to max 0.2s
     2. EBU R128 loudness normalization to -16 LUFS (podcast standard)
     3. True peak limiting to -1.0 dBFS (prevents clipping on playback)
-    4. Upsample to 44100 Hz (from XTTS-v2's 24000 Hz output)
+    4. Upsample to 44100 Hz (if needed)
     5. Export at 128kbps MP3
 
     Hardware note: All ffmpeg operations, no GPU required.

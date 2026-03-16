@@ -34,8 +34,12 @@ router = APIRouter(tags=["Health"])
 async def health() -> HealthResponse:
     """Health check endpoint for Docker and load balancers."""
     voice_ok = Path(VOICE_SAMPLE_PATH).exists()
+    voice_dir = Path(VOICE_SAMPLE_PATH).parent
+    reference_audio_present = voice_ok
+    reference_tokens_present = (voice_dir / "reference_vq_tokens.npy").exists()
     engine = get_tts_engine()
     model_ok = engine.is_ready
+    tts_engine_ready = engine.is_ready
     is_healthy = voice_ok and model_ok
 
     jobs_count = -1
@@ -53,9 +57,12 @@ async def health() -> HealthResponse:
     return HealthResponse(
         status="healthy" if is_healthy else "degraded",
         device=DEVICE,
-        model="xtts_v2",
+        model="fish-speech-1.5",
         voice_sample=voice_ok,
         model_loaded=model_ok,
+        reference_audio_present=reference_audio_present,
+        reference_tokens_present=reference_tokens_present,
+        tts_engine_ready=tts_engine_ready,
         job_store=job_store.storage_type,
         jobs_count=jobs_count,
         max_workers=MAX_WORKERS,
@@ -101,7 +108,7 @@ async def liveness() -> dict[str, bool]:
 async def detailed_health() -> dict[str, Any]:
     """Detailed health check with component-level status."""
     engine = get_tts_engine()
-    engine_status = engine.get_status()
+    engine_status = {"is_ready": engine.is_ready}
 
     job_store = get_job_store()
     try:

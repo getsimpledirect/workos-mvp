@@ -73,7 +73,7 @@ update_env_var() {
         return
     fi
 
-    # Using a temporary file and a loop is MUCH safer than sed for handling 
+    # Using a temporary file and a loop is MUCH safer than sed for handling
     # arbitrary values containing special characters like &, |, /, or \
     local found=false
     while read -r line || [[ -n "$line" ]]; do
@@ -84,11 +84,11 @@ update_env_var() {
             echo "$line"
         fi
     done < "${env_file}" > "${tmp_file}"
-    
+
     if [ "$found" = false ]; then
         echo "${var_name}=${var_value}" >> "${tmp_file}"
     fi
-    
+
     mv "${tmp_file}" "${env_file}"
     chmod 600 "${env_file}"
 }
@@ -458,7 +458,7 @@ else
     echo "── TTS Configuration (optional) ──"
     TTS_DEVICE=$(prompt_value "TTS Device (cpu/cuda)" "cuda")
     MAX_WORKERS=$(prompt_value "Max Workers" "4")
-    MAX_CHUNK_WORDS=$(prompt_value "Max Chunk Words" "50")
+    MAX_CHUNK_WORDS=$(prompt_value "Max Chunk Words" "200")
 
     echo ""
     echo "── General (optional) ──"
@@ -600,6 +600,37 @@ else
     echo "⚠ GCS_BUCKET_NAME not set — GCS uploads will be disabled"
 fi
 
+# ─── Build options ───────────────────────────────────────────────────────────
+echo ""
+echo "▶ Build options:"
+echo "  1. Use cache (faster if rebuilding) - ~1-3 minutes"
+echo "  2. Clean build (recommended for first build or after errors) - ~15-25 minutes"
+echo "  3. Clean build + remove old containers/images first"
+echo ""
+read -r -p "Choose build option [1/2/3]: " build_option
+build_option="${build_option:-1}"
+
+CLEAN_BUILD=false
+DEEP_CLEAN=false
+
+case "${build_option}" in
+    1)
+        echo "✓ Using cached build"
+        ;;
+    2)
+        echo "✓ Clean build (no cache)"
+        CLEAN_BUILD=true
+        ;;
+    3)
+        echo "✓ Clean build with Docker cleanup"
+        CLEAN_BUILD=true
+        DEEP_CLEAN=true
+        ;;
+    *)
+        echo "✓ Using cached build (default)"
+        ;;
+esac
+
 # ─── Confirm before starting services ────────────────────────────────────────
 echo ""
 read -r -p "▶ Ready to build and start services. Continue? [Y/n]: " start_confirm
@@ -609,10 +640,46 @@ if [[ ! "${start_confirm}" =~ ^[Yy]$ ]]; then
     exit 0
 fi
 
+# ─── Deep clean if requested ─────────────────────────────────────────────────
+if [ "${DEEP_CLEAN}" = true ]; then
+    echo ""
+    echo "▶ Performing deep Docker cleanup..."
+
+    # Stop and remove existing containers
+    if docker ps -a --format "{{.Names}}" | grep -q "tts-service"; then
+        echo "  Stopping TTS service container..."
+        docker stop tts-service 2>/dev/null || true
+        docker rm tts-service 2>/dev/null || true
+    fi
+
+    # Remove old images
+    if docker images -q ghost-tts-service:latest 2>/dev/null; then
+        echo "  Removing old TTS service image..."
+        docker rmi ghost-tts-service:latest -f 2>/dev/null || true
+    fi
+
+    # Prune Docker builder cache
+    echo "  Pruning Docker builder cache..."
+    docker builder prune -f --filter "until=24h" 2>/dev/null || true
+
+    # Prune unused images
+    echo "  Pruning unused images..."
+    docker image prune -f 2>/dev/null || true
+
+    echo "✓ Docker cleanup complete"
+fi
+
 # ─── Build TTS service ───────────────────────────────────────────────────────
 echo ""
-echo "▶ Building TTS service image..."
-docker compose build tts-service
+if [ "${CLEAN_BUILD}" = true ]; then
+    echo "▶ Building TTS service image (clean build - no cache)..."
+    echo "  This may take 15-25 minutes (downloads ~7GB of models)"
+    docker compose build --no-cache tts-service
+else
+    echo "▶ Building TTS service image (using cache)..."
+    echo "  This may take 1-3 minutes if already built"
+    docker compose build tts-service
+fi
 
 # ─── Start services ──────────────────────────────────────────────────────────
 echo ""
@@ -646,9 +713,7 @@ done
 
 if [ "$STATUS" != "healthy" ]; then
     echo ""
-    echo "⚠ TTS service health check timed out after ${TIMEOUT}s"
-    echo "  Check logs: docker logs tts-service --tail 50"
-    echo "  The service may still be downloading the XTTS-v2 model (~1.8GB)"
+    echo "  The service is downloading Fish Speech v1.5 + Whisper weights (~7GB)"
 fi
 
 # ─── Display summary ─────────────────────────────────────────────────────────
