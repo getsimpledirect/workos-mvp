@@ -58,7 +58,9 @@ class GenerateResponse(BaseModel):
     """Response after submitting a TTS job."""
 
     job_id: str = Field(..., description="Unique job identifier.")
-    status: str = Field(..., description="Initial job status. Always 'queued' for new jobs.")
+    status: str = Field(
+        ..., description="Initial job status. Always 'queued' for new jobs."
+    )
 
 
 class StatusResponse(BaseModel):
@@ -67,21 +69,40 @@ class StatusResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     job_id: str = Field(..., description="Unique job identifier.")
-    status: str = Field(..., description="Current status: queued, processing, paused, completed, or failed.")
-    gcs_uri: Optional[str] = Field(default=None, description="GCS URI when completed and GCS is enabled.")
-    local_path: Optional[str] = Field(default=None, description="Server file path for download endpoint.")
-    error: Optional[str] = Field(default=None, description="Error message when status is 'failed'.")
-    created_at: Optional[float] = Field(default=None, description="Unix timestamp of job creation.")
-    started_at: Optional[float] = Field(default=None, description="Unix timestamp when processing began.")
-    completed_at: Optional[float] = Field(default=None, description="Unix timestamp of completion.")
-    duration_seconds: Optional[float] = Field(default=None, description="Processing duration in seconds.")
+    status: str = Field(
+        ...,
+        description="Current status: queued, processing, paused, completed, or failed.",
+    )
+    gcs_uri: Optional[str] = Field(
+        default=None, description="GCS URI when completed and GCS is enabled."
+    )
+    local_path: Optional[str] = Field(
+        default=None, description="Server file path for download endpoint."
+    )
+    error: Optional[str] = Field(
+        default=None, description="Error message when status is 'failed'."
+    )
+    created_at: Optional[float] = Field(
+        default=None, description="Unix timestamp of job creation."
+    )
+    started_at: Optional[float] = Field(
+        default=None, description="Unix timestamp when processing began."
+    )
+    completed_at: Optional[float] = Field(
+        default=None, description="Unix timestamp of completion."
+    )
+    duration_seconds: Optional[float] = Field(
+        default=None, description="Processing duration in seconds."
+    )
 
 
 class JobListResponse(BaseModel):
     """List of all jobs."""
 
     total: int = Field(..., ge=0, description="Total job count.")
-    jobs: dict[str, dict[str, Any]] = Field(..., description="Map of job_id to job data.")
+    jobs: dict[str, dict[str, Any]] = Field(
+        ..., description="Map of job_id to job data."
+    )
 
 
 class HealthResponse(BaseModel):
@@ -99,10 +120,19 @@ class HealthResponse(BaseModel):
     max_workers: int = Field(..., description="Max concurrent workers.")
     executor_active: bool = Field(..., description="True if executor is running.")
     gcs_client_active: bool = Field(..., description="True if GCS client is connected.")
+    reference_audio_present: bool = Field(
+        False, description="Voice reference audio exists in voices directory."
+    )
+    reference_tokens_present: bool = Field(
+        False, description="Reference token file (reference_vq_tokens.npy) exists."
+    )
+    tts_engine_ready: bool = Field(False, description="TTSEngine reported ready.")
 
 
 class ErrorResponse(BaseModel):
     """Error response."""
 
     detail: str = Field(..., description="Error message.")
-    error_code: Optional[str] = Field(default=None, description="Machine-readable error code.")
+    error_code: Optional[str] = Field(
+        default=None, description="Machine-readable error code."
+    )

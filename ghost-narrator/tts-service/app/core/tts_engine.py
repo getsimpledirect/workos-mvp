@@ -175,7 +175,10 @@ class TTSEngine:
             TTSEngineError: If encoding fails
         """
         ref_path = Path(self._voice_sample_path)
-        tokens_path = ref_path.parent / "reference_tokens.npy"
+        tokens_path = ref_path.parent / "reference_vq_tokens.npy"
+        # Ensure the voices directory exists for artifacts
+        voices_dir = ref_path.parent
+        voices_dir.mkdir(parents=True, exist_ok=True)
 
         # Check if tokens already exist
         if tokens_path.exists():
@@ -208,20 +211,31 @@ class TTSEngine:
                     details=f"DAC inference error: {result.stderr}",
                 )
 
-            # Move generated fake.npy to reference_tokens.npy
+            # Mirror and move DAC output to tokens path safely across filesystems
             fake_npy = Path.cwd() / "fake.npy"
             if fake_npy.exists():
+                # Mirror for debugging/artifact visibility
+                artifact_path = voices_dir / "fake.npy"
+                if not artifact_path.exists():
+                    try:
+                        fake_npy.rename(artifact_path)
+                        logger.info(f"Mirrored DAC output to {artifact_path}")
+                    except OSError:
+                        import shutil
+
+                        shutil.copy2(str(fake_npy), str(artifact_path))
+                        logger.info(f"Copied DAC output to {artifact_path} (fallback)")
+                # Move to tokens path (reference_vq_tokens.npy) safely
                 try:
                     fake_npy.rename(tokens_path)
                     self._reference_tokens_path = tokens_path
                     logger.info(f"Reference tokens saved to {tokens_path}")
-                except OSError as rename_exc:
-                    # Cross-filesystem move; attempt a safe fallback copy then remove source
+                except OSError:
                     try:
                         import shutil
 
                         shutil.copy2(str(fake_npy), str(tokens_path))
-                        fake_npy.unlink()
+                        # Do not delete fake.npy to avoid side effects; tokens now present
                         self._reference_tokens_path = tokens_path
                         logger.info(
                             f"Reference tokens saved to {tokens_path} (fallback copy)"

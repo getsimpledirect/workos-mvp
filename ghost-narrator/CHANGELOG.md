@@ -117,3 +117,5 @@ See `docs/ARCHITECTURE.md` for technical details.
 
 [Unreleased]: https://github.com/yourusername/ghost-narrator/compare/v1.0.0...HEAD
 [1.0.0]: https://github.com/yourusername/ghost-narrator/releases/tag/v1.0.0
+- Fish Speech v1.5 migration: switch from Coqui XTTS v2; tokens stored as `reference_vq_tokens.npy` in voices; DAC artifact `fake.npy`; cross-device-safe moves; updated docs.
+- Documentation updates: ARCHITECTURE.md, README, and CHANGELOG reflect new artifact names and paths; no reference to deleting the original reference audio.
