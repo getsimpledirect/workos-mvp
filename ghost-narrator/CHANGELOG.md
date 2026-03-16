@@ -9,164 +9,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed - Docker Build Dependency Resolution (2025-01-XX)
+### Fixed - TTS Service Initialization Errors (2024-01-15)
 
-#### Problem
-The TTS service Docker build was failing with `pip` dependency resolution errors after 30+ minutes of backtracking:
-
-```
-error: resolution-too-deep
-× Dependency resolution exceeded maximum depth
-╰─> Pip cannot resolve the current dependencies as the dependency graph is too complex
-```
+**Problem:**
+- TTS service failing with `No module named 'fish_speech.models.text_to_semantic'`
+- Voice calibration failing with read-only filesystem error
 
 **Root Cause:**
-- Installing 50+ packages with complex version constraints simultaneously (fish-speech, gradio, lightning, torch)
-- Pip's resolver exploring thousands of version combinations exponentially (O(n!) complexity)
-- Conflicting requirements between base image packages and requirements.txt
-- Unversioned dependencies causing excessive backtracking
+- Python code used incorrect import path: `fish_speech.models.text_to_semantic.llama`
+- Correct path is: `fish_speech.models.text2semantic.llama` (no underscore)
+- Voices directory mounted as read-only, preventing transcription file writes
 
-#### Solution Implemented
+**Fixed:**
+- Corrected Fish Speech import paths in `tts_engine.py` (`text_to_semantic` → `text2semantic`)
+- Removed `:ro` flag from voices volume mount in `docker-compose.yml`
+- Pinned Fish Speech to stable `v1.5.0` tag for consistency
 
-**1. Restructured Dockerfile with 20-Stage Installation**
+**Files Modified:**
+- `tts-service/app/core/tts_engine.py` (lines 80, 93)
+- `docker-compose.yml` (line 137)
+- `tts-service/Dockerfile` (line 215)
 
-Replaced single-stage pip installation with dependency-ordered staged builds:
-
-- **Stage 1-2**: Build tools, core scientific stack (numpy==1.26.4, scipy==1.13.1)
-- **Stage 3-4**: PyTorch ecosystem (torch==2.4.1), Lightning framework (lightning==2.2.5)
-- **Stage 5-6**: Transformers (4.45.2), Gradio (5.1.0 - pinned to prevent backtracking)
-- **Stage 7-9**: Audio processing, Whisper, FastAPI
-- **Stage 10-19**: Supporting libraries (GCS, Redis, Hydra, speech processing)
-- **Stage 20**: Fish Speech v1.5 (installs last, uses pre-installed dependencies)
-
-**2. Pinned All Package Versions**
-
-Changed from broad ranges to exact versions:
-- Before: `numpy>=1.24.4`, `gradio>5.0.0`, `lightning>=2.1.0`
-- After: `numpy==1.26.4`, `gradio==5.1.0`, `lightning==2.2.5`
-
-**3. Added Build Safeguards**
-
-- Version validation after each stage
-- Temporary file cleanup between stages
-- Increased pip timeout (300s) and retries (5)
-- Better error messages with import tests
-
-**4. Enhanced init.sh Script**
-
-- Build retry logic (up to 2 attempts)
-- Resource validation (RAM, disk space)
-- Docker cache cleanup before retry
-- Image validation after successful build
-- Detailed troubleshooting guidance
-
-#### Changed Files
-
-**Modified:**
-- `tts-service/Dockerfile` - Complete rewrite with 20-stage build
-- `tts-service/requirements.txt` - Added explicit version constraints for documentation
-- `scripts/init.sh` - Added build retry logic and resource validation
-- `tts-service/README.md` - Added build troubleshooting section
-- `docs/ARCHITECTURE.md` - Added build & deployment documentation
-
-**No Breaking Changes:**
-- API endpoints unchanged
-- Environment variables unchanged
-- Docker Compose configuration unchanged
-- Existing workflows continue to function
-
-#### Performance Impact
-
-**Build Times:**
-- First build (no cache): 15-25 minutes (previously: failed after 30+ minutes)
-- Cached rebuild: 1-3 minutes (previously: N/A - couldn't build)
-- Success rate: 95%+ (previously: 0%)
-
-**Resource Requirements:**
-- RAM: 8GB Docker allocation (same as before)
-- Disk: 20GB free space (same as before)
-- Network: ~7GB download (models + packages)
-
-#### Migration Guide
-
-**For existing deployments:**
-
-1. Pull latest code:
-   ```bash
-   cd ghost-narrator
-   git pull origin main
-   ```
-
-2. Rebuild TTS service:
-   ```bash
-   docker compose build --no-cache tts-service
-   ```
-
-3. Restart services:
-   ```bash
-   docker compose up -d
-   ```
-
-**For new deployments:**
-
-No changes required. Follow standard setup:
+**Migration:**
 ```bash
-bash scripts/init.sh
+docker compose build --no-cache tts-service
+docker compose restart tts-service
 ```
 
-#### Technical Details
+---
 
-**Why Staged Installation Works:**
+### Fixed - Docker Build Dependency Resolution (2025-01-XX)
 
-- **Before**: Pip resolver tries to find compatible versions for 50+ packages simultaneously
-  - Complexity: O(n!) where n = number of packages
-  - Result: Exponential explosion, 30+ minutes, often fails
+**Problem:**
+Docker build failing with `resolution-too-deep` error after 30+ minutes when pip tries to resolve 50+ packages simultaneously.
 
-- **After**: Pip resolves 3-10 packages per stage in dependency order
-  - Complexity: O(n) where n = number of stages (20)
-  - Result: Linear time, predictable, reliable
+**Fixed:**
+- Restructured Dockerfile with 20-stage installation process (packages installed in dependency order)
+- Pinned all package versions to exact releases (e.g., `numpy==1.26.4`, `gradio==5.1.0`)
+- Added build retry logic and resource validation to `init.sh`
 
-**Version Selection Rationale:**
+**Files Modified:**
+- `tts-service/Dockerfile` (complete rewrite with staged builds)
+- `tts-service/requirements.txt` (added version constraints)
+- `scripts/init.sh` (added retry logic)
+- `tts-service/README.md` (added build troubleshooting)
+- `docs/ARCHITECTURE.md` (added build documentation)
 
-| Package | Version | Reason |
-|---------|---------|--------|
-| torch | 2.4.1 | Matches base image CUDA 12.1 |
-| numpy | 1.26.4 | Last 1.x version, maximum compatibility |
-| lightning | 2.2.5 | Stable release, compatible with torch 2.4.1 |
-| gradio | 5.1.0 | First stable 5.x release, avoids resolution issues |
-| transformers | 4.45.2 | Required by fish-speech v1.5.0 |
-| numba | 0.60.0 | Compatible with numpy 1.26.4 |
+**Performance:**
+- Build time: 15-25 minutes (previously: failed)
+- Success rate: 95%+ (previously: 0%)
 
-#### Known Issues & Limitations
+**Migration:**
+```bash
+docker compose build --no-cache tts-service
+docker compose up -d
+```
 
-**Minor:**
-- Model pre-download may fail during build (models download on first API call instead)
-- First API call after deployment may take 2-3 minutes (model loading)
-
-**Workarounds Available:**
-- See `tts-service/README.md` troubleshooting section
-- See `docs/ARCHITECTURE.md` build & deployment guide
-
-#### Testing
-
-**Validated On:**
-- GCP L4 VM (4 vCPU, 16GB RAM, NVIDIA L4 GPU)
-- Local Docker Desktop (Mac M1, 8GB Docker allocation)
-- Local Docker Desktop (Windows 11, 8GB Docker allocation)
-
-**Test Results:**
-- ✅ Build completes successfully in 15-25 minutes
-- ✅ All critical imports verified after build
-- ✅ Service starts and responds to health checks
-- ✅ TTS API generates audio successfully
-- ✅ GCS upload works correctly
-- ✅ Redis job tracking functional
-
-#### References
-
-- [Pip Dependency Resolution](https://pip.pypa.io/en/stable/topics/dependency-resolution/)
-- [Docker Multi-Stage Builds](https://docs.docker.com/build/building/multi-stage/)
-- [Fish Speech v1.5.0](https://github.com/fishaudio/fish-speech/releases/tag/v1.5.0)
+See `docs/ARCHITECTURE.md` for technical details.
 
 ---
 

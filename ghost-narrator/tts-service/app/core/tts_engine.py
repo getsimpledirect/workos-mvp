@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 class TTSEngine:
     """
     Thread-safe wrapper for Fish Speech v1.5 TTS engine.
-    
+
     This engine uses:
     1. Whisper (Tiny) for auto-transcribing reference audio.
     2. LLaMA (1.4B) for semantic token generation.
@@ -72,18 +72,18 @@ class TTSEngine:
 
             try:
                 logger.info(f"Initialising Fish Speech v1.5 on {self._device} (FP16)")
-                
+
                 # 1. Calibrate Reference Voice (Whisper)
                 self._calibrate_reference_voice()
 
                 # 2. Load Tokenizer & LLaMA (Semantic Model)
-                from fish_speech.models.text_to_semantic.llama import LlamaForConditionalGeneration
+                from fish_speech.models.text2semantic.llama import LlamaForConditionalGeneration
                 from transformers import AutoTokenizer
 
                 logger.info("Loading LLaMA semantic model...")
                 self._tokenizer = AutoTokenizer.from_pretrained(self._checkpoint_dir)
                 self._llama = LlamaForConditionalGeneration.from_pretrained(
-                    self._checkpoint_dir, 
+                    self._checkpoint_dir,
                     device_map=self._device,
                     torch_dtype=torch.float16
                 )
@@ -91,7 +91,7 @@ class TTSEngine:
 
                 # 3. Load Firefly (VQ-GAN Decoder)
                 from fish_speech.models.vqgan.modules.firefly import Firefly
-                
+
                 logger.info("Loading Firefly decoder...")
                 self._firefly = Firefly.from_pretrained(
                     self._checkpoint_dir,
@@ -111,8 +111,8 @@ class TTSEngine:
         """
         Transcribe reference.wav to reference.txt if missing.
 
-        Uses OpenAI Whisper (tiny) on CPU for minimal VRAM impact. The 
-        transcribed text is saved alongside the reference audio to be 
+        Uses OpenAI Whisper (tiny) on CPU for minimal VRAM impact. The
+        transcribed text is saved alongside the reference audio to be
         used as a semantic prompt for Fish Speech.
 
         Raises:
@@ -134,23 +134,23 @@ class TTSEngine:
                 # Use CPU for whisper to save VRAM for the main models if needed
                 # tiny is extremely fast on CPU anyway
                 self._whisper_model = whisper.load_model("tiny", device="cpu")
-            
+
             result = self._whisper_model.transcribe(str(ref_path))
             text = result["text"].strip()
-            
+
             if not text:
                 logger.warning("Whisper transcribed empty text from reference audio")
                 text = "Reference audio transcription pending."
-            
+
             with open(txt_path, "w", encoding="utf-8") as f:
                 f.write(text)
-            
+
             logger.info(f"Calibration complete. Reference text saved to {txt_path.name}")
-            
+
             # Cleanup
             del self._whisper_model
             self._whisper_model = None
-                
+
         except Exception as exc:
             logger.warning(f"Voice calibration failed (non-fatal): {exc}")
 
@@ -190,17 +190,17 @@ class TTSEngine:
                 import torch
                 import librosa
                 import soundfile as sf
-                
+
                 logger.debug(f"Synthesizing '{text[:50]}...' using Fish Speech v1.5")
-                
+
                 # 1. Prepare Semantic Tokens
                 # Standard Fish Speech 1.5 inference pattern
                 from fish_speech.utils.schema import ServeReferenceAudio, ServeTTSRequest
                 from fish_speech.inference import generate_audio_v1_5
-                
+
                 # Load reference at 44.1kHz (V1.5 Standard)
                 audio, _ = librosa.load(self._voice_sample_path, sr=44100)
-                
+
                 # Wrap inference in inference_mode for VRAM efficiency and speed
                 with torch.inference_mode():
                     generate_audio_v1_5(
@@ -212,7 +212,7 @@ class TTSEngine:
                         prompt_audio=audio,
                         output_path=output_path,
                         device=self._device,
-                        decode_config=None 
+                        decode_config=None
                     )
 
                 if not Path(output_path).exists():

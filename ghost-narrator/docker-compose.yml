@@ -134,7 +134,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - REDIS_JOB_TTL=${REDIS_JOB_TTL:-86400}
     volumes:
-      - ./tts-service/voices:/app/voices:ro
+      - ./tts-service/voices:/app/voices
       - tts_output:/app/output
     networks:
       - pipeline_net
