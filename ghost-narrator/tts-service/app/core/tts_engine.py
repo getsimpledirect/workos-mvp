@@ -2,18 +2,22 @@
 TTS Engine wrapper module for Fish Speech v1.5.
 
 Provides a singleton wrapper for high-fidelity, studio-quality synthesis
-using a LLaMA semantic model and Firefly (VQ-GAN) decoder.
+using Fish Speech v1.5's CLI-based inference pipeline.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import subprocess
+import tempfile
 import time
 from pathlib import Path
 from threading import Lock
-from typing import Any, Optional
+from typing import Optional
 
+import numpy as np
+import soundfile as sf
 import torch
 import whisper
 from app.config import DEVICE, TTS_LANGUAGE, VOICE_SAMPLE_PATH
@@ -26,10 +30,11 @@ class TTSEngine:
     """
     Thread-safe wrapper for Fish Speech v1.5 TTS engine.
 
-    This engine uses:
-    1. Whisper (Tiny) for auto-transcribing reference audio.
-    2. LLaMA (1.4B) for semantic token generation.
-    3. Firefly (VQ-GAN) for audio decoding.
+    This engine uses Fish Speech v1.5's CLI-based inference:
+    1. Whisper (Tiny) for auto-transcribing reference audio
+    2. DAC codec for reference audio encoding (VQ tokens)
+    3. Text2Semantic model for semantic token generation
+    4. DAC decoder for final audio synthesis
     """
 
     _instance: Optional["TTSEngine"] = None
@@ -41,24 +46,25 @@ class TTSEngine:
                 if cls._instance is None:
                     instance = super().__new__(cls)
                     instance._initialized = False
-                    instance._llama = None
-                    instance._firefly = None  # Corrected from _vits
-                    instance._tokenizer = None
                     instance._whisper_model = None
                     instance._synthesis_lock = Lock()
                     instance._device = DEVICE
                     instance._language = TTS_LANGUAGE
                     instance._voice_sample_path = VOICE_SAMPLE_PATH
                     instance._checkpoint_dir = Path("/app/checkpoints/fish-speech-1.5")
+                    instance._reference_tokens_path = None
+                    instance._reference_text = None
                     cls._instance = instance
         return cls._instance
 
     def initialize(self) -> None:
         """
-        Load Fish Speech v1.5 models and calibrate reference voice.
+        Initialize Fish Speech v1.5 engine and calibrate reference voice.
 
-        This method initializes the dual-model architecture (LLaMA + Firefly)
-        and runs the automatic voice calibration using Whisper if needed.
+        This method:
+        1. Transcribes reference audio using Whisper
+        2. Encodes reference audio to VQ tokens using Fish Speech DAC
+        3. Validates checkpoint directory and models
 
         Raises:
             TTSEngineError: If model weights are missing or initialization fails.
@@ -71,34 +77,30 @@ class TTSEngine:
                 return
 
             try:
-                logger.info(f"Initialising Fish Speech v1.5 on {self._device} (FP16)")
+                logger.info(f"Initialising Fish Speech v1.5 on {self._device}")
 
-                # 1. Calibrate Reference Voice (Whisper)
+                # 1. Validate checkpoint directory
+                if not self._checkpoint_dir.exists():
+                    raise TTSEngineError(
+                        f"Checkpoint directory not found: {self._checkpoint_dir}",
+                        details="Run model download during Docker build or manually download from HuggingFace"
+                    )
+
+                codec_path = self._checkpoint_dir / "firefly-gan-vq-fsq-8x1024-21hz-generator.pth"
+                if not codec_path.exists():
+                    # Try alternative codec name
+                    codec_path = self._checkpoint_dir / "codec.pth"
+                    if not codec_path.exists():
+                        raise TTSEngineError(
+                            f"Codec model not found in {self._checkpoint_dir}",
+                            details="Expected firefly-gan-vq-fsq-8x1024-21hz-generator.pth or codec.pth"
+                        )
+
+                # 2. Calibrate Reference Voice (Whisper transcription)
                 self._calibrate_reference_voice()
 
-                # 2. Load Tokenizer & LLaMA (Semantic Model)
-                from fish_speech.models.text2semantic.llama import LlamaForConditionalGeneration
-                from transformers import AutoTokenizer
-
-                logger.info("Loading LLaMA semantic model...")
-                self._tokenizer = AutoTokenizer.from_pretrained(self._checkpoint_dir)
-                self._llama = LlamaForConditionalGeneration.from_pretrained(
-                    self._checkpoint_dir,
-                    device_map=self._device,
-                    torch_dtype=torch.float16
-                )
-                self._llama.eval()
-
-                # 3. Load Firefly (VQ-GAN Decoder)
-                from fish_speech.models.vqgan.modules.firefly import Firefly
-
-                logger.info("Loading Firefly decoder...")
-                self._firefly = Firefly.from_pretrained(
-                    self._checkpoint_dir,
-                    device_map=self._device,
-                    torch_dtype=torch.float16
-                )
-                self._firefly.eval()
+                # 3. Encode reference audio to VQ tokens
+                self._encode_reference_audio(codec_path)
 
                 self._initialized = True
                 logger.info("Fish Speech v1.5 engine ready (Studio Quality)")
@@ -113,7 +115,7 @@ class TTSEngine:
 
         Uses OpenAI Whisper (tiny) on CPU for minimal VRAM impact. The
         transcribed text is saved alongside the reference audio to be
-        used as a semantic prompt for Fish Speech.
+        used as prompt for Fish Speech.
 
         Raises:
             VoiceSampleNotFoundError: If reference.wav is not found.
@@ -126,13 +128,13 @@ class TTSEngine:
 
         if txt_path.exists():
             logger.info(f"Using existing reference text: {txt_path}")
+            self._reference_text = txt_path.read_text(encoding="utf-8").strip()
             return
 
         logger.info(f"Calibrating reference voice (transcribing {ref_path.name})...")
         try:
             if self._whisper_model is None:
-                # Use CPU for whisper to save VRAM for the main models if needed
-                # tiny is extremely fast on CPU anyway
+                # Use CPU for whisper to save VRAM for the main models
                 self._whisper_model = whisper.load_model("tiny", device="cpu")
 
             result = self._whisper_model.transcribe(str(ref_path))
@@ -140,10 +142,10 @@ class TTSEngine:
 
             if not text:
                 logger.warning("Whisper transcribed empty text from reference audio")
-                text = "Reference audio transcription pending."
+                text = "Reference audio for voice cloning."
 
-            with open(txt_path, "w", encoding="utf-8") as f:
-                f.write(text)
+            txt_path.write_text(text, encoding="utf-8")
+            self._reference_text = text
 
             logger.info(f"Calibration complete. Reference text saved to {txt_path.name}")
 
@@ -153,6 +155,67 @@ class TTSEngine:
 
         except Exception as exc:
             logger.warning(f"Voice calibration failed (non-fatal): {exc}")
+            self._reference_text = "Reference audio for voice cloning."
+
+    def _encode_reference_audio(self, codec_path: Path) -> None:
+        """
+        Encode reference audio to VQ tokens using Fish Speech DAC.
+
+        Args:
+            codec_path: Path to the DAC codec checkpoint
+
+        Raises:
+            TTSEngineError: If encoding fails
+        """
+        ref_path = Path(self._voice_sample_path)
+        tokens_path = ref_path.parent / "reference_tokens.npy"
+
+        # Check if tokens already exist
+        if tokens_path.exists():
+            logger.info(f"Using existing reference tokens: {tokens_path}")
+            self._reference_tokens_path = tokens_path
+            return
+
+        logger.info("Encoding reference audio to VQ tokens...")
+        try:
+            # Run Fish Speech DAC inference to get VQ tokens
+            cmd = [
+                "python", "-m", "fish_speech.models.dac.inference",
+                "-i", str(ref_path),
+                "--checkpoint-path", str(codec_path)
+            ]
+
+            result = subprocess.run(
+                cmd,
+                cwd="/opt/conda/lib/python3.11/site-packages/fish_speech",
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+
+            if result.returncode != 0:
+                raise TTSEngineError(
+                    "Reference audio encoding failed",
+                    details=f"DAC inference error: {result.stderr}"
+                )
+
+            # Move generated fake.npy to reference_tokens.npy
+            fake_npy = Path.cwd() / "fake.npy"
+            if fake_npy.exists():
+                fake_npy.rename(tokens_path)
+                self._reference_tokens_path = tokens_path
+                logger.info(f"Reference tokens saved to {tokens_path}")
+            else:
+                raise TTSEngineError(
+                    "Reference token file not generated",
+                    details="Expected fake.npy output from DAC inference"
+                )
+
+        except subprocess.TimeoutExpired:
+            raise TTSEngineError("Reference audio encoding timed out (>60s)")
+        except Exception as exc:
+            logger.error(f"Reference audio encoding failed: {exc}")
+            raise TTSEngineError("Failed to encode reference audio", details=str(exc))
 
     @property
     def is_ready(self) -> bool:
@@ -161,12 +224,11 @@ class TTSEngine:
 
     def synthesize_to_file(self, text: str, output_path: str) -> str:
         """
-        Synthesize text using zero-shot cloning with explicit inference logic.
+        Synthesize text using Fish Speech v1.5 CLI-based inference.
 
         This method performs the full inference pipeline:
-        1. Load reference audio and transcription.
-        2. Generate semantic tokens via LLaMA.
-        3. Decode tokens to high-fidelity audio via Firefly.
+        1. Generate semantic tokens from text (text2semantic)
+        2. Decode tokens to high-fidelity audio (DAC decoder)
 
         Args:
             text: The input text to synthesize.
@@ -181,70 +243,160 @@ class TTSEngine:
         if not self._initialized:
             raise SynthesisError("TTS engine not initialized")
 
-        # Load reference text for prompt
-        ref_txt_path = Path(self._voice_sample_path).with_suffix(".txt")
-        prompt_text = ref_txt_path.read_text(encoding="utf-8") if ref_txt_path.exists() else ""
-
         with self._synthesis_lock:
             try:
-                import torch
-                import librosa
-                import soundfile as sf
-
                 logger.debug(f"Synthesizing '{text[:50]}...' using Fish Speech v1.5")
 
-                # 1. Prepare Semantic Tokens
-                # Standard Fish Speech 1.5 inference pattern
-                from fish_speech.utils.schema import ServeReferenceAudio, ServeTTSRequest
-                from fish_speech.inference import generate_audio_v1_5
+                # Step 1: Generate semantic tokens from text
+                codes_path = self._generate_semantic_tokens(text)
 
-                # Load reference at 44.1kHz (V1.5 Standard)
-                audio, _ = librosa.load(self._voice_sample_path, sr=44100)
+                # Step 2: Decode semantic tokens to audio
+                self._decode_to_audio(codes_path, output_path)
 
-                # Wrap inference in inference_mode for VRAM efficiency and speed
-                with torch.inference_mode():
-                    generate_audio_v1_5(
-                        llama=self._llama,
-                        firefly=self._firefly,
-                        tokenizer=self._tokenizer,
-                        text=text,
-                        prompt_text=prompt_text,
-                        prompt_audio=audio,
-                        output_path=output_path,
-                        device=self._device,
-                        decode_config=None
-                    )
+                # Cleanup temporary codes file
+                if codes_path.exists():
+                    codes_path.unlink()
 
                 if not Path(output_path).exists():
-                    raise SynthesisError("Fish Speech failed to produce output file")
+                    raise SynthesisError(
+                        "Synthesis completed but output file was not created",
+                        details=f"Expected output at: {output_path}"
+                    )
 
-                return output_path
+                logger.info(f"Synthesis complete: {output_path}")
+                return str(Path(output_path).absolute())
 
             except Exception as exc:
-                logger.error(f"Fish Speech synthesis failed: {exc}")
-                raise SynthesisError("Studio-quality synthesis failed", details=str(exc))
+                logger.error(f"Synthesis failed: {exc}")
+                raise SynthesisError(f"Failed to synthesize audio: {str(exc)}")
 
-    def get_status(self) -> dict[str, Any]:
+    def _generate_semantic_tokens(self, text: str) -> Path:
         """
-        Get current status and metadata of the TTS engine.
+        Generate semantic tokens from text using Fish Speech text2semantic model.
+
+        Args:
+            text: Input text to convert to semantic tokens
 
         Returns:
-            A dictionary containing engine status, device, and capabilities.
+            Path to the generated codes file
+
+        Raises:
+            SynthesisError: If semantic token generation fails
         """
-        return {
-            "model": "fish-speech-1.5",
-            "quality": "studio",
-            "device": self._device,
-            "is_ready": self._initialized,
-            "voice_sample_path": self._voice_sample_path,
-        }
+        try:
+            # Prepare command for text2semantic inference
+            cmd = [
+                "python", "-m", "fish_speech.models.text2semantic.inference",
+                "--text", text,
+                "--checkpoint-path", str(self._checkpoint_dir),
+            ]
 
+            # Add reference audio parameters for voice cloning
+            if self._reference_tokens_path and self._reference_text:
+                cmd.extend([
+                    "--prompt-text", self._reference_text,
+                    "--prompt-tokens", str(self._reference_tokens_path),
+                ])
 
-def get_tts_engine() -> TTSEngine:
-    return TTSEngine()
+            # Add device-specific parameters
+            if self._device == "cpu":
+                cmd.append("--half")  # Use FP16 on CPU (actually uses FP32 automatically)
+            else:
+                # GPU mode - can optionally use --compile for speed
+                pass
 
+            logger.debug(f"Running text2semantic: {' '.join(cmd)}")
 
-def initialize_tts_engine() -> TTSEngine:
-    engine = get_tts_engine()
-    engine.initialize()
-    return engine
+            result = subprocess.run(
+                cmd,
+                cwd="/opt/conda/lib/python3.11/site-packages/fish_speech",
+                capture_output=True,
+                text=True,
+                timeout=180  # 3 minutes timeout for long text
+            )
+
+            if result.returncode != 0:
+                raise SynthesisError(
+                    "Semantic token generation failed",
+                    details=f"text2semantic error: {result.stderr}"
+                )
+
+            # Find the generated codes file (codes_0.npy, codes_1.npy, etc.)
+            codes_path = Path.cwd() / "codes_0.npy"
+            if not codes_path.exists():
+                raise SynthesisError(
+                    "Semantic tokens file not generated",
+                    details="Expected codes_0.npy output from text2semantic"
+                )
+
+            logger.debug(f"Semantic tokens generated: {codes_path}")
+            return codes_path
+
+        except subprocess.TimeoutExpired:
+            raise SynthesisError("Semantic token generation timed out (>180s)")
+        except Exception as exc:
+            logger.error(f"Semantic token generation failed: {exc}")
+            raise SynthesisError("Failed to generate semantic tokens", details=str(exc))
+
+    def _decode_to_audio(self, codes_path: Path, output_path: str) -> None:
+        """
+        Decode semantic tokens to audio using Fish Speech DAC decoder.
+
+        Args:
+            codes_path: Path to the semantic tokens file
+            output_path: Target path for the audio file
+
+        Raises:
+            SynthesisError: If audio decoding fails
+        """
+        try:
+            codec_path = self._checkpoint_dir / "firefly-gan-vq-fsq-8x1024-21hz-generator.pth"
+            if not codec_path.exists():
+                codec_path = self._checkpoint_dir / "codec.pth"
+
+            # Run DAC decoder
+            cmd = [
+                "python", "-m", "fish_speech.models.dac.inference",
+                "-i", str(codes_path),
+                "--checkpoint-path", str(codec_path)
+            ]
+
+            logger.debug(f"Running DAC decoder: {' '.join(cmd)}")
+
+            result = subprocess.run(
+                cmd,
+                cwd="/opt/conda/lib/python3.11/site-packages/fish_speech",
+                capture_output=True,
+                text=True,
+                timeout=120  # 2 minutes timeout
+            )
+
+            if result.returncode != 0:
+                raise SynthesisError(
+                    "Audio decoding failed",
+                    details=f"DAC decoder error: {result.stderr}"
+                )
+
+            # Move generated fake.wav to output_path
+            fake_wav = Path.cwd() / "fake.wav"
+            if fake_wav.exists():
+                # Ensure output directory exists
+                Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+                fake_wav.rename(output_path)
+                logger.debug(f"Audio decoded to: {output_path}")
+            else:
+                raise SynthesisError(
+                    "Audio file not generated",
+                    details="Expected fake.wav output from DAC decoder"
+                )
+
+        except subprocess.TimeoutExpired:
+            raise SynthesisError("Audio decoding timed out (>120s)")
+        except Exception as exc:
+            logger.error(f"Audio decoding failed: {exc}")
+            raise SynthesisError("Failed to decode audio", details=str(exc))
+
+    def __del__(self):
+        """Cleanup resources on deletion."""
+        if hasattr(self, '_whisper_model') and self._whisper_model is not None:
+            del self._whisper_model
