@@ -277,6 +277,8 @@ store_secret() {
 
 store_secret "ghost-audio-n8n-password"     "n8n admin password"
 store_secret "ghost-audio-n8n-encrypt-key"  "n8n encryption key (run: openssl rand -hex 32)"
+store_secret "ghost-audio-ghost-url-site1"  "Ghost URL for Site 1 (e.g., https://ghost.founderreality.com)"
+store_secret "ghost-audio-ghost-url-site2"  "Ghost URL for Site 2 (e.g., https://ghost.getsimpledirect.com)"
 store_secret "ghost-audio-ghost-key-site1"  "Ghost Content API key for Site 1"
 store_secret "ghost-audio-ghost-key-site2"  "Ghost Content API key for Site 2"
 store_secret "ghost-audio-ghost-admin-key-site1" "Ghost Admin API key for Site 1"

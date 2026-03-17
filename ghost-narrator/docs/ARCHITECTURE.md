@@ -75,7 +75,7 @@ Every time you publish a post on either of your Ghost websites, this pipeline au
              │
              │  Orchestration Flow
              │
-             │  Ghost Webhook → n8n Pipeline (POST /webhook/ghost-article)
+             │  Ghost Webhook → n8n Pipeline (POST /webhook/ghost-published)
              │  n8n Pipeline → vLLM  (convert article to narration script)
              │  n8n Pipeline → TTS   (synthesize MP3 with cloned voice)
              │  TTS Service → GCS   (upload MP3)
@@ -660,7 +660,7 @@ ffprobe tts-service/voices/reference.wav
 cp .env.example .env
 nano .env
 # Fill in: GCS_BUCKET_NAME, GCP_SA_KEY_PATH, N8N_HOST, N8N_PASSWORD,
-#          GHOST_SITE1_URL, GHOST_SITE1_CONTENT_API_KEY, etc.
+#          GHOST_SITE1_URL, GHOST_KEY_SITE1, etc.
 ```
 
 ### Step 4: Create GCP Service Account
@@ -712,11 +712,11 @@ n8n containers can read from environment variables set in docker-compose.
 
 ```
 Type: Webhook (Trigger)
-Path: /webhook/ghost-article
+Path: /webhook/ghost-published
 Method: POST
 ```
 
-This is the entry point. When you publish an article in Ghost, Ghost sends a POST request to `http://YOUR_VM_IP:5678/webhook/ghost-article`. n8n receives it and starts the workflow.
+This is the entry point. When you publish an article in Ghost, Ghost sends a POST request to `http://YOUR_VM_IP:5678/webhook/ghost-published`. n8n receives it and starts the workflow.
 
 **What the payload looks like:**
 ```json
@@ -867,12 +867,12 @@ For **each** of your 2 Ghost websites:
 1. Go to **Ghost Admin** → **Settings** → **Integrations**
 2. Click **Add custom integration**
 3. Name it: `Audio Pipeline`
-4. Copy the **Content API key** → save to `.env` as `GHOST_SITE1_CONTENT_API_KEY`
+4. Copy the **Content API key** → save to `.env` as `GHOST_KEY_SITE1`
 5. Copy the **Admin API key** → save to `.env` as `GHOST_SITE1_ADMIN_API_KEY`
 6. Scroll down to **Webhooks** → **Add webhook**
    - Name: `Audio Pipeline Trigger`
    - Event: **Post published**
-   - Target URL: `http://YOUR_VM_IP:5678/webhook/ghost-article`
+   - Target URL: `http://YOUR_VM_IP:5678/webhook/ghost-published`
 7. Save
 
 **For both sites using the same n8n webhook:** Both Ghost sites can POST to the same URL. The `Parse Ghost Payload` node extracts the `post_url` which contains the domain, so the `Build GCS Path` node correctly separates them into different GCS folders.
