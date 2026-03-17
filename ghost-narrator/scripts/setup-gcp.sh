@@ -142,6 +142,26 @@ gsutil iam ch \
     "gs://${BUCKET_NAME}"
 echo "  ✓ Bucket-level IAM set"
 
+echo "▶ Making bucket objects publicly readable..."
+gsutil iam ch allUsers:objectViewer "gs://${BUCKET_NAME}"
+echo "  ✓ Bucket is now public (read-only)"
+
+# ─── Set CORS configuration ──────────────────────────────────────────────────
+
+cat > /tmp/cors.json <<'CORS'
+[
+  {
+    "origin": ["*"],
+    "method": ["GET"],
+    "responseHeader": ["Content-Type"],
+    "maxAgeSeconds": 3600
+  }
+]
+CORS
+echo "▶ Setting CORS policy on gs://${BUCKET_NAME}..."
+gsutil cors set /tmp/cors.json "gs://${BUCKET_NAME}"
+echo "  ✓ CORS policy set"
+
 gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
     --member="serviceAccount:${SA_EMAIL}" \
     --role="roles/secretmanager.secretAccessor" \
@@ -277,6 +297,8 @@ store_secret() {
 
 store_secret "ghost-audio-n8n-password"     "n8n admin password"
 store_secret "ghost-audio-n8n-encrypt-key"  "n8n encryption key (run: openssl rand -hex 32)"
+store_secret "ghost-audio-ghost-url-site1"  "Ghost URL for Site 1 (e.g., https://ghost.founderreality.com)"
+store_secret "ghost-audio-ghost-url-site2"  "Ghost URL for Site 2 (e.g., https://ghost.getsimpledirect.com)"
 store_secret "ghost-audio-ghost-key-site1"  "Ghost Content API key for Site 1"
 store_secret "ghost-audio-ghost-key-site2"  "Ghost Content API key for Site 2"
 store_secret "ghost-audio-ghost-admin-key-site1" "Ghost Admin API key for Site 1"

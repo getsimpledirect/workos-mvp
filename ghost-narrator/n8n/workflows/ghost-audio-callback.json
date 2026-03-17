@@ -28,7 +28,7 @@
         300
       ],
       "parameters": {
-        "jsCode": "const data = $input.first().json.body || $input.first().json;\n\n// We only want to embed completed jobs with a GCS URI\nif (data.status !== 'completed') {\n  return [{ json: { skip: true, reason: `Job status is ${data.status}` } }];\n}\n\n// GCS URI looks like gs://bucket/path.mp3\n// We need to convert it to a public https URL\nlet audioUrl = '';\nif (data.gcs_uri && data.gcs_uri.startsWith('gs://')) {\n    const parts = data.gcs_uri.replace('gs://', '').split('/');\n    const bucket = parts.shift();\n    const objectPath = parts.join('/');\n    audioUrl = `https://storage.googleapis.com/${bucket}/${objectPath}`;\n} else {\n    return [{ json: { skip: true, reason: 'No valid GCS URI found in callback' } }];\n}\n\n// We embedded the postId inside the jobId using the format {siteSlug}-{postId}-{slug}\n// For example: ghost-founderreality-com-64b7f9c8a2b3d4e5f6a7b8c9-my-article-slug\nconst jobIdParts = data.job_id.split('-');\n\n// We need to find the 24-char hex string which is the Ghost Post ID\nconst postIdIndex = jobIdParts.findIndex(part => part.length === 24 && /^[0-9a-fA-F]+$/.test(part));\n\nif (postIdIndex === -1) {\n    return [{ json: { skip: true, reason: 'Could not extract post ID from job ID' } }];\n}\n\nconst postId = jobIdParts[postIdIndex];\nconst siteSlug = jobIdParts.slice(0, postIdIndex).join('-');\n\nreturn [{\n  json: {\n    skip: false,\n    jobId: data.job_id,\n    postId,\n    siteSlug,\n    audioUrl\n  }\n}];"
+        "jsCode": "const data = $input.first().json.body || $input.first().json;\n\nif (data.status !== 'completed') {\n  return [{ json: { skip: true, reason: `Job status is ${data.status}` } }];\n}\n\nlet audioUrl = '';\nif (data.gcs_uri && data.gcs_uri.startsWith('gs://')) {\n    const parts = data.gcs_uri.replace('gs://', '').split('/');\n    const bucket = parts.shift();\n    const objectPath = parts.join('/');\n    audioUrl = `https://storage.googleapis.com/${bucket}/${objectPath}`;\n} else {\n    return [{ json: { skip: true, reason: 'No valid GCS URI' } }];\n}\n\n// Try new format first (site-pid-postId-slug)\nlet postId = '';\nlet siteSlug = '';\n\nif (data.job_id.includes('-pid-')) {\n    const parts = data.job_id.split('-pid-');\n    siteSlug = parts[0];\n    postId = parts[1].split('-')[0];\n} else {\n    // Fallback to old format (search for 24-char hex)\n    const parts = data.job_id.split('-');\n    const postIdIndex = parts.findIndex(part => part.length === 24 && /^[0-9a-fA-F]+$/.test(part));\n    if (postIdIndex !== -1) {\n        postId = parts[postIdIndex];\n        siteSlug = parts.slice(0, postIdIndex).join('-');\n    }\n}\n\nif (!postId || postId.length !== 24) {\n    return [{ json: { skip: true, reason: `Could not extract valid post ID from: ${data.job_id}` } }];\n}\n\nreturn [{\n  json: {\n    skip: false,\n    jobId: data.job_id,\n    postId,\n    siteSlug,\n    audioUrl,\n    gcsUri: data.gcs_uri\n  }\n}];"
       }
     },
     {
@@ -72,27 +72,44 @@
         450
       ],
       "parameters": {
-        "jsCode": "console.log('Skipping Embed:', $input.first().json.reason);\nreturn $input.all();"
+        "jsCode": "console.log('Skipped:', $input.first().json.reason);\nreturn $input.all();"
+      }
+    },
+    {
+      "id": "extract-api-keys",
+      "name": "Extract API Keys",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        750,
+        100
+      ],
+      "parameters": {
+        "jsCode": "const siteSlug = $json.siteSlug;\nconst isSite1 = siteSlug.includes('founderreality');\n\n// Try environment variables first, then n8n variables\nconst apiKey1 = $env.GHOST_SITE1_ADMIN_API_KEY || $vars.GHOST_SITE1_ADMIN_API_KEY;\nconst apiKey2 = $env.GHOST_SITE2_ADMIN_API_KEY || $vars.GHOST_SITE2_ADMIN_API_KEY;\n\nconst adminApiKey = isSite1 ? apiKey1 : apiKey2;\n\nif (!adminApiKey || !adminApiKey.includes(':')) {\n  throw new Error('Admin API key missing or invalid format (expected key_id:secret). Check n8n Variables or .env.');\n}\n\nconst [keyId, secret] = adminApiKey.split(':');\n\n// Determine Ghost URL dynamically from env if available, fallback to hardcoded\nconst ghostUrl = isSite1\n  ? ($env.GHOST_SITE1_URL || 'https://ghost.founderreality.com')\n  : ($env.GHOST_SITE2_URL || 'https://ghost.getsimpledirect.com');\n\nreturn [{\n  json: {\n    ...$json,\n    ghostKeyId: keyId,\n    ghostSecret: secret,\n    ghostUrl: ghostUrl\n  }\n}];"
       }
     },
     {
       "id": "get-ghost-post",
-      "name": "Get Latest Post Content",
+      "name": "Get Post Content",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1000,
+        1350,
         200
       ],
       "parameters": {
         "method": "GET",
-        "url": "={{ $json.siteSlug.includes('founderreality') ? 'https://ghost.founderreality.com' : 'https://your-second-site.com' }}/ghost/api/admin/posts/{{ $json.postId }}/",
+        "url": "={{ $json.ghostUrl }}/ghost/api/admin/posts/{{ $json.postId }}/",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
             {
               "name": "Authorization",
-              "value": "={{ $json.siteSlug.includes('founderreality') ? `Ghost ${$env.GHOST_SITE1_ADMIN_API_KEY}` : `Ghost ${$env.GHOST_SITE2_ADMIN_API_KEY}` }}"
+              "value": "={{ 'Ghost ' + $json.ghostJwtToken }}"
+            },
+            {
+              "name": "Accept-Version",
+              "value": "v6.0"
             }
           ]
         },
@@ -101,7 +118,7 @@
           "parameters": [
             {
               "name": "formats",
-              "value": "html"
+              "value": "html,lexical"
             }
           ]
         }
@@ -113,11 +130,11 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1250,
+        1600,
         200
       ],
       "parameters": {
-        "jsCode": "const postData = $input.first().json;\nconst post = postData.posts?.[0];\n\nif (!post) {\n    throw new Error('Ghost API did not return a post');\n}\n\n// We need the data from the parse-callback node\nconst parsed = $('Check Status & Parse Job ID').first().json;\n\n// Don't inject again if there's already an audio player added by this script\nlet html = post.html || '';\nif (html.includes('id=\"gn-audio-embed\"')) {\n    return [{ json: { skipUpdate: true, reason: 'Audio embed already present' } }];\n}\n\n// The audio widget HTML\nconst audioWidget = `\n<div id=\"gn-audio-embed\" style=\"margin-bottom: 24px; padding: 16px; background-color: #f8f9fa; border-radius: 8px; border: 1px solid #e9ecef;\">\n    <p style=\"margin-top: 0; margin-bottom: 8px; font-weight: 600; font-size: 0.9em; color: #495057;\">🎧 Listen to this article (AI Narrated)</p>\n    <audio controls style=\"width: 100%; height: 40px;\">\n        <source src=\"${parsed.audioUrl}\" type=\"audio/mpeg\">\n        Your browser does not support the audio element.\n    </audio>\n</div>\n`;\n\nconst newHtml = audioWidget + html;\n\nreturn [{\n  json: {\n    skipUpdate: false,\n    postId: post.id,\n    updatedAt: post.updated_at,\n    siteSlug: parsed.siteSlug,\n    newHtml\n  }\n}];"
+        "jsCode": "const postData = $input.first().json;\nconst post = postData.posts?.[0];\n\nif (!post) {\n    throw new Error('Ghost API did not return a post');\n}\n\nif (post.status !== 'published') {\n    return [{ json: { skipUpdate: true, reason: `Post is in ${post.status} status, skipping embed` } }];\n}\n\nconst parsed = $('Check Status & Parse Job ID').first().json;\nlet html = post.html || '';\n\n// Sovereign Dashboard Aesthetic: Brutalist Utility\nconst audioWidget = `\n<!--kg-card-begin: html-->\n<div id=\"gn-audio-embed\" style=\"margin: 40px 0; border-top: 2px solid #000; border-bottom: 1px solid #e1e1e1; padding: 16px 0; font-family: Inter, system-ui, -apple-system, sans-serif; background: #fff;\">\n    <div style=\"display: flex; align-items: center; justify-content: space-between; gap: 20px;\">\n        <div style=\"display: flex; align-items: center; gap: 14px; flex-grow: 1;\">\n            <button onclick=\"const a = this.closest('#gn-audio-embed').querySelector('audio'); if(a.paused){a.play(); this.innerHTML='&#10074;&#10074;';}else{a.pause(); this.innerHTML='&#9654;';}\" \n                    style=\"width: 44px; height: 44px; border-radius: 50%; border: none; background: #000; color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; transition: transform 0.1s active;\">\n                &#9654;\n            </button>\n            <div style=\"display: flex; flex-direction: column; gap: 2px;\">\n                <span style=\"font-weight: 800; font-size: 13px; text-transform: uppercase; letter-spacing: 0.02em; color: #000;\">Listen to article</span>\n                <span id=\"gn-audio-time\" style=\"font-size: 11px; color: #737373; font-family: monospace;\">0:00 / 0:00</span>\n            </div>\n            <div style=\"flex-grow: 1; height: 4px; background: #f0f0f0; position: relative; border-radius: 2px; overflow: hidden; margin: 0 10px; max-width: 300px;\">\n                <div id=\"gn-audio-progress\" style=\"position: absolute; left: 0; top: 0; height: 100%; width: 0%; background: #000;\"></div>\n            </div>\n        </div>\n        <div style=\"display: flex; align-items: center; gap: 6px;\">\n            <span style=\"font-size: 10px; font-weight: 700; color: #a3a3a3; text-transform: uppercase;\">Speed</span>\n            <button onclick=\"const a = this.closest('#gn-audio-embed').querySelector('audio'); const rates = [1, 1.25, 1.5, 2]; let idx = rates.indexOf(a.playbackRate); const next = rates[(idx + 1) % rates.length]; a.playbackRate = next; this.innerText = next + 'x'\" \n                    style=\"background: #fff; border: 1.5px solid #000; border-radius: 4px; padding: 2px 8px; font-size: 11px; cursor: pointer; color: #000; font-weight: 800; min-width: 42px;\">\n                1x\n            </button>\n        </div>\n    </div>\n    <audio style=\"display:none;\" ontimeupdate=\"const p = (this.currentTime / this.duration) * 100; document.getElementById('gn-audio-progress').style.width = p + '%'; const m = Math.floor(this.currentTime / 60); const s = Math.floor(this.currentTime % 60); const dm = Math.floor(this.duration / 60); const ds = Math.floor(this.duration % 60); if(!isNaN(dm)) document.getElementById('gn-audio-time').innerText = m + ':' + (s<10?'0':'') + s + ' / ' + dm + ':' + (ds<10?'0':'') + ds;\">\n        <source src=\"${parsed.audioUrl}\" type=\"audio/mpeg\">\n    </audio>\n</div>\n<!--kg-card-end: html-->\n`;\n\nlet newHtml = '';\nconst embedRegex = /<!--kg-card-begin: html-->[\\s\\S]*?id=[\"']gn-audio-embed[\"'][\\s\\S]*?<!--kg-card-end: html-->|<figure[^>]*>[\\s\\S]*?id=[\"']gn-audio-embed[\"'][\\s\\S]*?<\\/figure>|<div[^>]*id=[\"']gn-audio-embed[\"'][^>]*>[\\s\\S]*?<\\/div>/i;\n\nif (embedRegex.test(html)) {\n    newHtml = html.replace(embedRegex, audioWidget.trim());\n} else {\n    newHtml = audioWidget + html;\n}\n\nconst authData = $('Create Ghost JWT').first().json;\n\nreturn [{\n  json: {\n    skipUpdate: false,\n    postId: post.id,\n    updatedAt: post.updated_at,\n    siteSlug: parsed.siteSlug,\n    ghostUrl: authData.ghostUrl,\n    ghostJwtToken: authData.ghostJwtToken,\n    newHtml\n  }\n}];"
       }
     },
     {
@@ -126,7 +143,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.1,
       "position": [
-        1500,
+        1850,
         200
       ],
       "parameters": {
@@ -153,22 +170,26 @@
     },
     {
       "id": "update-ghost",
-      "name": "Update Ghost Post",
+      "name": "Update Post",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1750,
+        2100,
         150
       ],
       "parameters": {
         "method": "PUT",
-        "url": "={{ $json.siteSlug.includes('founderreality') ? 'https://ghost.founderreality.com' : 'https://your-second-site.com' }}/ghost/api/admin/posts/{{ $json.postId }}/",
+        "url": "={{ $json.ghostUrl }}/ghost/api/admin/posts/{{ $json.postId }}/?source=html",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
             {
               "name": "Authorization",
-              "value": "={{ $json.siteSlug.includes('founderreality') ? `Ghost ${$env.GHOST_SITE1_ADMIN_API_KEY}` : `Ghost ${$env.GHOST_SITE2_ADMIN_API_KEY}` }}"
+              "value": "={{ 'Ghost ' + $json.ghostJwtToken }}"
+            },
+            {
+              "name": "Accept-Version",
+              "value": "v6.0"
             },
             {
               "name": "Content-Type",
@@ -179,6 +200,19 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"posts\": [\n    {\n      \"html\": {{ JSON.stringify($json.newHtml) }},\n      \"updated_at\": \"{{ $json.updatedAt }}\"\n    }\n  ]\n}"
+      }
+    },
+    {
+      "id": "create-ghost-jwt",
+      "name": "Create Ghost JWT",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        100
+      ],
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\n\nconst keyId = $json.ghostKeyId;\nconst secret = $json.ghostSecret;\nconst now = Math.floor(Date.now() / 1000);\n\n// Ghost Admin API JWT Headers\nconst header = {\n    alg: 'HS256',\n    kid: keyId,\n    typ: 'JWT'\n};\n\n// Ghost Admin API JWT Payload\nconst payload = {\n    iat: now,\n    exp: now + 300, // 5 minutes max\n    aud: '/admin/'\n};\n\n// Helper: Base64URL encode without padding\nfunction base64Url(str) {\n    return Buffer.from(str)\n        .toString('base64')\n        .replace(/\\+/g, '-')\n        .replace(/\\//g, '_')\n        .replace(/=/g, '');\n}\n\nconst encodedHeader = base64Url(JSON.stringify(header));\nconst encodedPayload = base64Url(JSON.stringify(payload));\nconst signingInput = `${encodedHeader}.${encodedPayload}`;\n\n// CRITICAL: Decode the hex secret into bytes before signing\nconst keyBytes = Buffer.from(secret, 'hex');\n\n// Sign with HMAC-SHA256\nconst signature = crypto\n    .createHmac('sha256', keyBytes)\n    .update(signingInput)\n    .digest('base64')\n    .replace(/\\+/g, '-')\n    .replace(/\\//g, '_')\n    .replace(/=/g, '');\n\nconst token = `${signingInput}.${signature}`;\n\nreturn [{\n    json: {\n        ...$json,\n        ghostJwtToken: token\n    }\n}];"
       }
     }
   ],
@@ -209,7 +243,7 @@
       "main": [
         [
           {
-            "node": "Get Latest Post Content",
+            "node": "Extract API Keys",
             "type": "main",
             "index": 0
           }
@@ -223,7 +257,18 @@
         ]
       ]
     },
-    "Get Latest Post Content": {
+    "Extract API Keys": {
+      "main": [
+        [
+          {
+            "node": "Create Ghost JWT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Post Content": {
       "main": [
         [
           {
@@ -249,7 +294,18 @@
       "main": [
         [
           {
-            "node": "Update Ghost Post",
+            "node": "Update Post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Ghost JWT": {
+      "main": [
+        [
+          {
+            "node": "Get Post Content",
             "type": "main",
             "index": 0
           }
@@ -259,13 +315,6 @@
   },
   "active": false,
   "settings": {
-    "executionOrder": "v1",
-    "saveManualExecutions": true,
-    "saveDataSuccessExecution": "all",
-    "saveDataErrorExecution": "all"
-  },
-  "versionId": "2",
-  "meta": {
-    "instanceId": "ghost-narrator-callback"
+    "executionOrder": "v1"
   }
 }

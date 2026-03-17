@@ -135,6 +135,8 @@ fi
 USE_SECRET_MANAGER=false
 N8N_PASSWORD_FROM_SM=""
 N8N_ENCRYPTION_KEY_FROM_SM=""
+GHOST_SITE1_URL_FROM_SM=""
+GHOST_SITE2_URL_FROM_SM=""
 GHOST_KEY_SITE1_FROM_SM=""
 GHOST_KEY_SITE2_FROM_SM=""
 GHOST_ADMIN_KEY_SITE1_FROM_SM=""
@@ -147,6 +149,8 @@ if [ -n "${GCP_PROJECT_ID}" ]; then
     # Try to fetch secrets
     N8N_PASSWORD_FROM_SM=$(fetch_secret "ghost-audio-n8n-password" "${GCP_PROJECT_ID}")
     N8N_ENCRYPTION_KEY_FROM_SM=$(fetch_secret "ghost-audio-n8n-encrypt-key" "${GCP_PROJECT_ID}")
+    GHOST_SITE1_URL_FROM_SM=$(fetch_secret "ghost-audio-ghost-url-site1" "${GCP_PROJECT_ID}")
+    GHOST_SITE2_URL_FROM_SM=$(fetch_secret "ghost-audio-ghost-url-site2" "${GCP_PROJECT_ID}")
     GHOST_KEY_SITE1_FROM_SM=$(fetch_secret "ghost-audio-ghost-key-site1" "${GCP_PROJECT_ID}")
     GHOST_KEY_SITE2_FROM_SM=$(fetch_secret "ghost-audio-ghost-key-site2" "${GCP_PROJECT_ID}")
     GHOST_ADMIN_KEY_SITE1_FROM_SM=$(fetch_secret "ghost-audio-ghost-admin-key-site1" "${GCP_PROJECT_ID}")
@@ -156,6 +160,8 @@ if [ -n "${GCP_PROJECT_ID}" ]; then
     secrets_found=0
     [ -n "${N8N_PASSWORD_FROM_SM}" ] && secrets_found=$((secrets_found + 1)) && echo "  ✓ Found: ghost-audio-n8n-password"
     [ -n "${N8N_ENCRYPTION_KEY_FROM_SM}" ] && secrets_found=$((secrets_found + 1)) && echo "  ✓ Found: ghost-audio-n8n-encrypt-key"
+    [ -n "${GHOST_SITE1_URL_FROM_SM}" ] && secrets_found=$((secrets_found + 1)) && echo "  ✓ Found: ghost-audio-ghost-url-site1"
+    [ -n "${GHOST_SITE2_URL_FROM_SM}" ] && secrets_found=$((secrets_found + 1)) && echo "  ✓ Found: ghost-audio-ghost-url-site2"
     [ -n "${GHOST_KEY_SITE1_FROM_SM}" ] && secrets_found=$((secrets_found + 1)) && echo "  ✓ Found: ghost-audio-ghost-key-site1"
     [ -n "${GHOST_KEY_SITE2_FROM_SM}" ] && secrets_found=$((secrets_found + 1)) && echo "  ✓ Found: ghost-audio-ghost-key-site2"
     [ -n "${GHOST_ADMIN_KEY_SITE1_FROM_SM}" ] && secrets_found=$((secrets_found + 1)) && echo "  ✓ Found: ghost-audio-ghost-admin-key-site1"
@@ -450,6 +456,11 @@ else
     GCS_BUCKET_NAME=$(prompt_value "GCS Bucket Name")
 
     echo ""
+    echo "── Ghost Configuration (optional) ──"
+    GHOST_SITE1_URL=$(prompt_value "Ghost Site 1 URL" "https://ghost.founderreality.com")
+    GHOST_SITE2_URL=$(prompt_value "Ghost Site 2 URL" "https://ghost.getsimpledirect.com")
+
+    echo ""
     echo "── vLLM Configuration (optional) ──"
     VLLM_BASE_URL=$(prompt_value "vLLM Base URL" "http://host.docker.internal:8001/v1")
     VLLM_MODEL_NAME=$(prompt_value "vLLM Model Name" "Qwen/Qwen3-14B-AWQ")
@@ -478,6 +489,8 @@ N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
 GCS_BUCKET_NAME=${GCS_BUCKET_NAME}
 
 # Ghost API Keys
+GHOST_SITE1_URL=${GHOST_SITE1_URL}
+GHOST_SITE2_URL=${GHOST_SITE2_URL}
 GHOST_KEY_SITE1=${GHOST_KEY_SITE1_FROM_SM:-}
 GHOST_KEY_SITE2=${GHOST_KEY_SITE2_FROM_SM:-}
 GHOST_SITE1_ADMIN_API_KEY=${GHOST_ADMIN_KEY_SITE1_FROM_SM:-}

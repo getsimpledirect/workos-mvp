@@ -69,6 +69,7 @@ services:
       - N8N_SECURE_COOKIE=false
       # Allow env var access in workflow expressions
       - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+      - NODE_FUNCTION_ALLOW_BUILTIN=crypto
       # Server configuration
       - WEBHOOK_URL=http://${SERVER_EXTERNAL_IP}:5678/
       - N8N_HOST=0.0.0.0
@@ -85,6 +86,8 @@ services:
       - VLLM_MODEL_NAME=${VLLM_MODEL_NAME:-Qwen/Qwen3-14B}
       - TTS_SERVICE_URL=http://tts-service:8020
       # Ghost API Keys (for fetching article content and updating posts)
+      - GHOST_SITE1_URL=${GHOST_SITE1_URL:-}
+      - GHOST_SITE2_URL=${GHOST_SITE2_URL:-}
       - GHOST_KEY_SITE1=${GHOST_KEY_SITE1:-}
       - GHOST_KEY_SITE2=${GHOST_KEY_SITE2:-}
       - GHOST_SITE1_ADMIN_API_KEY=${GHOST_SITE1_ADMIN_API_KEY:-}
