@@ -1,0 +1,20 @@
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "1.1.0"
+tag_format = "v$version"
+version_files = [
+    "VERSION",
+    "ghost-narrator/tts-service/app/__init__.py:__version__"
+]
+update_changelog_on_bump = true
+changelog_file = "ghost-narrator/CHANGELOG.md"
+changelog_incremental = true
+
+[tool.commitizen.customize]
+message_template = "{{change_type}}: {{message}}"
+example = "feat: add dynamic site support"
+schema_pattern = "(feat|fix|docs|style|refactor|perf|test|chore|revert|bump)"
+bump_pattern = "^(feat|fix|perf|refactor)"
+bump_map = {"feat" = "MINOR", "fix" = "PATCH", "perf" = "PATCH", "refactor" = "PATCH"}
+change_type_map = {"feat" = "Features", "fix" = "Bug Fixes", "docs" = "Documentation", "style" = "Styles", "refactor" = "Refactoring", "perf" = "Performance", "test" = "Tests", "chore" = "Maintenance"}
+change_type_order = ["Features", "Bug Fixes", "Performance", "Refactoring", "Documentation", "Styles", "Maintenance"]
