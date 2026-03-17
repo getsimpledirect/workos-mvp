@@ -118,7 +118,7 @@
           "parameters": [
             {
               "name": "formats",
-              "value": "html"
+              "value": "html,lexical"
             }
           ]
         }
@@ -179,7 +179,7 @@
       ],
       "parameters": {
         "method": "PUT",
-        "url": "={{ $json.ghostUrl }}/ghost/api/admin/posts/{{ $json.postId }}/",
+        "url": "={{ $json.ghostUrl }}/ghost/api/admin/posts/{{ $json.postId }}/?source=html",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
