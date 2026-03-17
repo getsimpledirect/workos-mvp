@@ -68,9 +68,32 @@
       "name": "Generate Ghost JWT",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [750, 200],
+      "position": [750, 100],
       "parameters": {
-        "jsCode": "// Get the admin API key from environment\nconst apiKey = $json.siteSlug.includes('founderreality') \n  ? $env.GHOST_SITE1_ADMIN_API_KEY \n  : $env.GHOST_SITE2_ADMIN_API_KEY;\n\n// Split the key into id and secret (format: key_id:secret)\nconst [keyId, secret] = apiKey.split(':');\n\nif (!keyId || !secret) {\n  throw new Error('Invalid Ghost Admin API key format. Expected: key_id:secret');\n}\n\n// Create JWT header and payload\nconst header = {\n  alg: 'HS256',\n  typ: 'JWT'\n};\n\nconst payload = {\n  iat: Math.floor(Date.now() / 1000),\n  exp: Math.floor(Date.now() / 1000) + (5 * 60), // 5 minutes expiry\n  aud: '/admin/'\n};\n\n// Base64url encode without padding\nfunction base64url(str) {\n  return Buffer.from(str).toString('base64').replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=/g, '');\n}\n\nconst encodedHeader = base64url(JSON.stringify(header));\nconst encodedPayload = base64url(JSON.stringify(payload));\n\n// Sign using HMAC-SHA256\nconst crypto = require('crypto');\nconst signatureInput = `${encodedHeader}.${encodedPayload}`;\nconst signature = crypto.createHmac('sha256', secret).update(signatureInput).digest('base64').replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=/g, '');\n\nconst jwt = `${signatureInput}.${signature}`;\n\nreturn [{\n  json: {\n    ...$json,\n    ghostJwtToken: jwt\n  }\n}];"
+        "jsCode": "// Get the admin API key from environment\nconst apiKey = $json.siteSlug.includes('founderreality') \n  ? $env.GHOST_SITE1_ADMIN_API_KEY \n  : $env.GHOST_SITE2_ADMIN_API_KEY;\n\n// Split into id and secret (format: key_id:secret)\nconst [keyId, secret] = apiKey.split(':');\n\nif (!keyId || !secret) {\n  throw new Error('Invalid Ghost Admin API key format. Expected: key_id:secret');\n}\n\n// Create base64url encoded header and payload\nconst header = btoa(unescape(encodeURIComponent(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))))\n  .replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=/g, '');\n  \nconst payload = btoa(unescape(encodeURIComponent(JSON.stringify({\n  iat: Math.floor(Date.now() / 1000),\n  exp: Math.floor(Date.now() / 1000) + (5 * 60),\n  aud: '/admin/'\n}))))\n  .replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=/g, '');\n\nconst signingInput = `${header}.${payload}`;\n\nreturn [{\n  json: {\n    ...$json,\n    jwtSigningInput: signingInput,\n    ghostSecret: secret\n  }\n}];"
+      }
+    },
+    {
+      "id": "hmac-sign-jwt",
+      "name": "Sign JWT",
+      "type": "n8n-nodes-base.hmac",
+      "typeVersion": 1,
+      "position": [900, 100],
+      "parameters": {
+        "algorithm": "sha256",
+        "dataPropertyName": "={{ $json.jwtSigningInput }}",
+        "secretKey": "={{ $json.ghostSecret }}",
+        "encoding": "base64url"
+      }
+    },
+    {
+      "id": "assemble-jwt",
+      "name": "Assemble JWT Token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 100],
+      "parameters": {
+        "jsCode": "const signingInput = $input.first().json.jwtSigningInput;\nconst signature = $input.first().json.hmac;\n\n// Assemble final JWT\nconst jwt = `${signingInput}.${signature}`;\n\nreturn [{\n  json: {\n    ...$input.first().json,\n    ghostJwtToken: jwt\n  }\n}];"
       }
     },
     {
@@ -210,6 +233,28 @@
       ]
     },
     "Generate Ghost JWT": {
+      "main": [
+        [
+          {
+            "node": "Sign JWT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sign JWT": {
+      "main": [
+        [
+          {
+            "node": "Assemble JWT Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assemble JWT Token": {
       "main": [
         [
           {
