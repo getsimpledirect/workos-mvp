@@ -142,6 +142,26 @@ gsutil iam ch \
     "gs://${BUCKET_NAME}"
 echo "  ✓ Bucket-level IAM set"
 
+echo "▶ Making bucket objects publicly readable..."
+gsutil iam ch allUsers:objectViewer "gs://${BUCKET_NAME}"
+echo "  ✓ Bucket is now public (read-only)"
+
+# ─── Set CORS configuration ──────────────────────────────────────────────────
+
+cat > /tmp/cors.json <<'CORS'
+[
+  {
+    "origin": ["*"],
+    "method": ["GET"],
+    "responseHeader": ["Content-Type"],
+    "maxAgeSeconds": 3600
+  }
+]
+CORS
+echo "▶ Setting CORS policy on gs://${BUCKET_NAME}..."
+gsutil cors set /tmp/cors.json "gs://${BUCKET_NAME}"
+echo "  ✓ CORS policy set"
+
 gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
     --member="serviceAccount:${SA_EMAIL}" \
     --role="roles/secretmanager.secretAccessor" \
