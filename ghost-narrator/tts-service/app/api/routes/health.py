@@ -10,7 +10,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Response
 
 from app.config import DEVICE, MAX_WORKERS, VOICE_SAMPLE_PATH
 from app.core.tts_engine import get_tts_engine
@@ -42,17 +42,15 @@ async def health() -> HealthResponse:
     tts_engine_ready = engine.is_ready
     is_healthy = voice_ok and model_ok
 
+    job_store = get_job_store()
     jobs_count = -1
     try:
-        job_store = get_job_store()
-        jobs = await job_store.list_all()
-        jobs_count = len(jobs)
+        jobs_count = await job_store.count()
     except Exception as exc:
         logger.error(f"Error listing jobs in health check: {exc}")
 
     executor = get_executor()
     gcs_client = get_gcs_client()
-    job_store = get_job_store()
 
     return HealthResponse(
         status="healthy" if is_healthy else "degraded",
@@ -76,15 +74,17 @@ async def health() -> HealthResponse:
     summary="Readiness probe",
     description="Kubernetes readiness probe. Returns 200 if the service is ready to accept traffic.",
 )
-async def readiness() -> dict[str, Any]:
+async def readiness(response: Response) -> dict[str, Any]:
     """Kubernetes readiness probe endpoint."""
     engine = get_tts_engine()
     voice_ok = Path(VOICE_SAMPLE_PATH).exists()
 
     if not engine.is_ready:
+        response.status_code = 503
         return {"ready": False, "reason": "TTS engine not loaded"}
 
     if not voice_ok:
+        response.status_code = 503
         return {"ready": False, "reason": "Voice sample not found"}
 
     return {"ready": True}
@@ -130,10 +130,15 @@ async def detailed_health() -> dict[str, Any]:
     http_client = get_http_client()
 
     voice_path = Path(VOICE_SAMPLE_PATH)
+    voice_exists = voice_path.exists()
+    try:
+        voice_size = voice_path.stat().st_size if voice_exists else 0
+    except OSError:
+        voice_size = 0
     voice_status = {
         "path": VOICE_SAMPLE_PATH,
-        "exists": voice_path.exists(),
-        "size_bytes": voice_path.stat().st_size if voice_path.exists() else 0,
+        "exists": voice_exists,
+        "size_bytes": voice_size,
     }
 
     is_healthy = engine_status.get("is_ready", False) and voice_status["exists"]

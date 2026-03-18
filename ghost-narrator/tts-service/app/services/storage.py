@@ -12,7 +12,9 @@ from pathlib import Path
 import concurrent.futures
 from typing import TYPE_CHECKING, Optional
 
-from app.config import GCS_BUCKET_NAME, GCS_UPLOAD_TIMEOUT
+import time
+
+from app.config import GCS_BUCKET_NAME, GCS_UPLOAD_TIMEOUT, MAX_RETRIES, OUTPUT_DIR
 from app.core.exceptions import GCSUploadError, StorageError
 
 if TYPE_CHECKING:
@@ -92,7 +94,14 @@ def validate_local_file(local_path: str) -> Path:
     Raises:
         StorageError: If file is missing or empty.
     """
-    path = Path(local_path)
+    path = Path(local_path).resolve()
+
+    # Prevent path traversal — only files within OUTPUT_DIR may be uploaded
+    if not str(path).startswith(str(OUTPUT_DIR.resolve())):
+        raise StorageError(
+            f"Upload path is outside the allowed output directory: {local_path}",
+            details="Only files within OUTPUT_DIR can be uploaded",
+        )
 
     if not path.exists():
         raise StorageError(
@@ -145,28 +154,41 @@ def upload_to_gcs(
         f"Uploading {local_path} ({file_size_mb:.2f} MB) to gs://{GCS_BUCKET_NAME}/{gcs_object_path}"
     )
 
-    try:
-        bucket = _gcs_client.bucket(GCS_BUCKET_NAME)
-        blob = bucket.blob(gcs_object_path)
+    last_exc: Optional[Exception] = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            bucket = _gcs_client.bucket(GCS_BUCKET_NAME)
+            blob = bucket.blob(gcs_object_path)
 
-        blob.upload_from_filename(
-            local_path,
-            content_type=content_type,
-            timeout=timeout,
-        )
+            blob.upload_from_filename(
+                local_path,
+                content_type=content_type,
+                timeout=timeout,
+            )
 
-        gcs_uri = f"gs://{GCS_BUCKET_NAME}/{gcs_object_path}"
-        logger.info(f"Uploaded to {gcs_uri} ({file_size_mb:.2f} MB)")
+            gcs_uri = f"gs://{GCS_BUCKET_NAME}/{gcs_object_path}"
+            logger.info(f"Uploaded to {gcs_uri} ({file_size_mb:.2f} MB)")
+            return gcs_uri
 
-        return gcs_uri
+        except Exception as exc:
+            last_exc = exc
+            if attempt < MAX_RETRIES - 1:
+                wait_time = min(2 ** attempt, 30)
+                logger.warning(
+                    f"GCS upload attempt {attempt + 1}/{MAX_RETRIES} failed "
+                    f"for {local_path}: {exc}. Retrying in {wait_time}s..."
+                )
+                time.sleep(wait_time)
+            else:
+                logger.error(
+                    f"GCS upload failed after {MAX_RETRIES} attempts for {local_path}: {exc}"
+                )
 
-    except Exception as exc:
-        logger.error(f"GCS upload failed for {local_path}: {exc}")
-        raise GCSUploadError(
-            f"Failed to upload to GCS: {exc}",
-            bucket=GCS_BUCKET_NAME,
-            path=gcs_object_path,
-        ) from exc
+    raise GCSUploadError(
+        f"Failed to upload to GCS after {MAX_RETRIES} attempts: {last_exc}",
+        bucket=GCS_BUCKET_NAME,
+        path=gcs_object_path,
+    ) from last_exc
 
 
 async def upload_to_gcs_async(
@@ -192,7 +214,7 @@ async def upload_to_gcs_async(
     """
     import asyncio
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     return await loop.run_in_executor(
         executor,

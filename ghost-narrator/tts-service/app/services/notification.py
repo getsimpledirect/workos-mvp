@@ -139,7 +139,7 @@ async def notify_n8n(
 
         except Exception as exc:
             if attempt < max_retries - 1:
-                wait_time = 2**attempt  # Exponential backoff: 1, 2, 4 seconds
+                wait_time = min(2**attempt, 30)  # Exponential backoff capped at 30s
                 logger.warning(
                     f"n8n callback failed for job {job_id} "
                     f"(attempt {attempt + 1}/{max_retries}): {exc}. "

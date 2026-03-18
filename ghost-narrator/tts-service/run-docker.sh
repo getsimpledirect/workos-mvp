@@ -54,6 +54,7 @@ if [ "$HELP" = true ]; then
     echo "  TTS_DEVICE        cpu or cuda (default: cpu)"
     echo "  TTS_LANGUAGE      Language code (default: en)"
     echo "  MAX_CHUNK_WORDS   Max words per chunk (default: 200)"
+    echo "  MAX_WORKERS       Thread pool size for parallel synthesis (default: 4)"
     echo ""
     echo "Examples:"
     echo "  # Run in background"
@@ -214,12 +215,14 @@ echo ""
 TTS_LANG="${TTS_LANGUAGE:-en}"
 MAX_WORDS="${MAX_CHUNK_WORDS:-200}"
 DEVICE_TYPE="${TTS_DEVICE:-cpu}"
+WORKERS="${MAX_WORKERS:-4}"
 
 ENV_VARS=(
     "-e" "VOICE_SAMPLE_PATH=/app/voices/reference.wav"
     "-e" "TTS_LANGUAGE=$TTS_LANG"
     "-e" "MAX_CHUNK_WORDS=$MAX_WORDS"
     "-e" "DEVICE=$DEVICE_TYPE"
+    "-e" "MAX_WORKERS=$WORKERS"
 )
 
 if [ -n "$GCS_BUCKET_NAME" ]; then

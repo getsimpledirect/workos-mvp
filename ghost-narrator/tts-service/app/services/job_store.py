@@ -126,9 +126,11 @@ class JobStore:
                 return
             except Exception as exc:
                 logger.error(
-                    f"Redis set failed for job {job_id}: {exc}. Falling back to memory"
+                    f"Redis set failed for job {job_id}: {exc}. "
+                    "Using in-memory fallback for this operation (Redis connection preserved)"
                 )
-                self.use_redis = False
+                # Do NOT permanently disable Redis — this may be a transient error.
+                # Fall through to memory store for this write only.
 
         async with self.lock:
             self.memory_store[job_id] = serializable_data
@@ -183,6 +185,45 @@ class JobStore:
         async with self.lock:
             return job_id in self.memory_store
 
+    async def create_if_not_exists(self, job_id: str, job_data: dict[str, Any]) -> bool:
+        """
+        Atomically create a job if it does not already exist.
+
+        Args:
+            job_id: The unique job identifier.
+            job_data: Dictionary containing initial job data.
+
+        Returns:
+            True if created, False if it already existed.
+        """
+        if not job_id:
+            raise ValueError("job_id cannot be empty")
+        
+        serializable_data = self._make_serializable(job_data)
+
+        if self.use_redis and self.redis_client:
+            try:
+                # Use SET NX EX for atomic create-with-TTL (avoids setnx+expire race)
+                created = await self.redis_client.set(
+                    f"job:{job_id}",
+                    json.dumps(serializable_data, default=str),
+                    nx=True,
+                    ex=REDIS_JOB_TTL,
+                )
+                return created is not None
+            except Exception as exc:
+                logger.error(
+                    f"Redis create_if_not_exists failed: {exc}. "
+                    "Using in-memory fallback for this operation (Redis connection preserved)"
+                )
+                # Do NOT permanently disable Redis — this may be a transient error.
+
+        async with self.lock:
+            if job_id in self.memory_store:
+                return False
+            self.memory_store[job_id] = serializable_data
+            return True
+
     async def update(self, job_id: str, updates: dict[str, Any]) -> None:
         """
         Update job data atomically.
@@ -194,13 +235,52 @@ class JobStore:
         if not updates:
             return
 
-        job_data = await self.get(job_id)
-        if not job_data:
-            logger.warning(f"Cannot update non-existent job: {job_id}")
-            job_data = {}
+        serializable_updates = self._make_serializable(updates)
 
-        job_data.update(updates)
-        await self.set(job_id, job_data)
+        if self.use_redis and self.redis_client:
+            try:
+                # Redis doesn't have a direct JSON merge command in standard Redis (without RedisJSON module)
+                # But we are storing the whole dict as a JSON string.
+                # To make it atomic without RedisJSON, we should ideally use a Lua script.
+                lua_script = """
+                local data = redis.call('GET', KEYS[1])
+                if data then
+                    local decoded = cjson.decode(data)
+                    local updates = cjson.decode(ARGV[1])
+                    for k, v in pairs(updates) do
+                        decoded[k] = v
+                    end
+                    redis.call('SET', KEYS[1], cjson.encode(decoded))
+                    redis.call('EXPIRE', KEYS[1], ARGV[2])
+                    return 1
+                end
+                return 0
+                """
+                
+                result = await self.redis_client.eval(
+                    lua_script, 
+                    1, 
+                    f"job:{job_id}", 
+                    json.dumps(serializable_updates, default=str),
+                    REDIS_JOB_TTL
+                )
+                
+                if result == 1:
+                    return
+                else:
+                    logger.warning(f"Cannot update non-existent job in Redis: {job_id}")
+                    return
+            except Exception as exc:
+                logger.error(f"Redis update failed: {exc}. Falling back to non-atomic memory update")
+                # Fallback to in-memory
+
+        async with self.lock:
+            job_data = self.memory_store.get(job_id)
+            if job_data is None:
+                logger.warning(f"Cannot update non-existent job in memory: {job_id}")
+                return
+            job_data.update(serializable_updates)
+            self.memory_store[job_id] = job_data
 
     async def delete(self, job_id: str) -> bool:
         """
@@ -236,14 +316,14 @@ class JobStore:
         if self.use_redis and self.redis_client:
             try:
                 keys = await self.redis_client.keys("job:*")
+                if not keys:
+                    return {}
+                values = await self.redis_client.mget(*keys)
                 jobs: dict[str, dict[str, Any]] = {}
-
-                for key in keys:
-                    job_id = key.replace("job:", "")
-                    data = await self.redis_client.get(key)
+                for key, data in zip(keys, values):
                     if data:
+                        job_id = key.replace("job:", "", 1)
                         jobs[job_id] = json.loads(data)
-
                 return jobs
             except Exception as exc:
                 logger.error(f"Redis list failed: {exc}. Returning memory store")

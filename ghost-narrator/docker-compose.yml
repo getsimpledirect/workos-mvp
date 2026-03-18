@@ -34,8 +34,8 @@ services:
       redis-server
       --appendonly yes
       --appendfsync everysec
-      --maxmemory 256mb
-      --maxmemory-policy allkeys-lru
+      --maxmemory 512mb
+      --maxmemory-policy volatile-lru
     volumes:
       - redis_data:/data
     networks:

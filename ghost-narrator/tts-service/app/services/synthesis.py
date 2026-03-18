@@ -74,7 +74,7 @@ def shutdown_executor(wait: bool = True, cancel_futures: bool = True) -> None:
             _executor = None
 
 
-def synthesize_chunk(text: str, output_path: str) -> str:
+def synthesize_chunk(text: str, output_path: str, job_id: str = "default") -> str:
     """
     Synthesize a single text chunk using Fish Speech v1.5 voice cloning.
 
@@ -83,6 +83,7 @@ def synthesize_chunk(text: str, output_path: str) -> str:
     Args:
         text: The text to synthesize.
         output_path: Path where the WAV file will be saved.
+        job_id: Job identifier for process tracking.
 
     Returns:
         The output path of the generated WAV file.
@@ -97,7 +98,7 @@ def synthesize_chunk(text: str, output_path: str) -> str:
         )
 
     engine = get_tts_engine()
-    return engine.synthesize_to_file(text, output_path)
+    return engine.synthesize_to_file(text, output_path, job_id)
 
 
 async def synthesize_chunks_sequential(
@@ -131,7 +132,7 @@ async def synthesize_chunks_sequential(
             details="Call initialize_executor() during startup",
         )
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     chunk_wav_paths: list[str] = []
 
     for idx, chunk in enumerate(chunks):
@@ -153,6 +154,7 @@ async def synthesize_chunks_sequential(
                 synthesize_chunk,
                 chunk,
                 chunk_wav,
+                job_id,
             )
             chunk_wav_paths.append(wav_path)
         except Exception as exc:
@@ -196,7 +198,7 @@ async def synthesize_chunks_parallel(
             details="Call initialize_executor() during startup",
         )
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     # Check job status before starting batch
     if status_check_callback:
@@ -206,7 +208,7 @@ async def synthesize_chunks_parallel(
 
     for idx, chunk in enumerate(chunks):
         chunk_wav = str(job_dir / f"chunk_{idx:04d}.wav")
-        task = loop.run_in_executor(_executor, synthesize_chunk, chunk, chunk_wav)
+        task = loop.run_in_executor(_executor, synthesize_chunk, chunk, chunk_wav, job_id)
         tasks.append(task)
 
     logger.info(f"[{job_id}] Starting parallel synthesis of {len(chunks)} chunks")
@@ -217,10 +219,12 @@ async def synthesize_chunks_parallel(
         return list(chunk_wav_paths)
 
     except Exception as exc:
-        # Cancel any remaining tasks
+        # Cancel any remaining tasks and wait for them to finish cancelling
+        # to avoid "coroutine was never awaited" warnings and resource leaks.
         for task in tasks:
             if not task.done():
                 task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
         raise SynthesisError(
             "Parallel synthesis failed",

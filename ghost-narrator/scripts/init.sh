@@ -617,7 +617,7 @@ fi
 echo ""
 echo "▶ Build options:"
 echo "  1. Use cache (faster if rebuilding) - ~1-3 minutes"
-echo "  2. Clean build (recommended for first build or after errors) - ~15-25 minutes"
+echo "  2. Clean build (recommended for first build or after errors) - ~2-5 minutes"
 echo "  3. Clean build + remove old containers/images first"
 echo ""
 read -r -p "Choose build option [1/2/3]: " build_option
@@ -686,11 +686,11 @@ fi
 echo ""
 if [ "${CLEAN_BUILD}" = true ]; then
     echo "▶ Building TTS service image (clean build - no cache)..."
-    echo "  This may take 15-25 minutes (downloads ~7GB of models)"
+    echo "  This may take 2-5 minutes (downloads ~4GB of models)"
     docker compose build --no-cache tts-service
 else
     echo "▶ Building TTS service image (using cache)..."
-    echo "  This may take 1-3 minutes if already built"
+    echo "  This may take <30 seconds if already built"
     docker compose build tts-service
 fi
 
@@ -726,7 +726,7 @@ done
 
 if [ "$STATUS" != "healthy" ]; then
     echo ""
-    echo "  The service is downloading Fish Speech v1.5 + Whisper weights (~7GB)"
+    echo "  The service is downloading Fish Speech v1.5 + Whisper weights (~4GB)"
 fi
 
 # ─── Display summary ─────────────────────────────────────────────────────────
