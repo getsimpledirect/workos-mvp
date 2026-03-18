@@ -166,7 +166,7 @@
         200
       ],
       "parameters": {
-        "jsCode": "let script = $input.first().json.choices?.[0]?.message?.content || '';\n\nif (!script) {\n  throw new Error('LLM returned empty narration');\n}\n\n// Strip Qwen3 thinking blocks if present\nscript = script.replace(/<think>[\\s\\S]*?<\\/think>/gi, '');\n\n// Strip common LLM meta-commentary lines that appear before the actual content.\n// These are lines where the model talks ABOUT the task rather than doing it.\nconst metaPatterns = [\n  /^(okay|alright|sure|certainly|of course)[,.].*$/im,\n  /^(the user wants|the user is asking|i need to|i should|i will|i'll|let me|let's|first,? i|now,? i).*$/im,\n  /^(converting|rewriting|transforming|here is|here's|below is|the following|this is).*?(narration|script|podcast|article|text).*$/im,\n  /^(key (rules|points|things)|important:|note:|rule \\d)/im,\n  /^(I have (converted|rewritten|created)|This is (a|the) (narration|script)).*$/im,\n  /^Here is the (narration|script|podcast version).*$/im\n];\n\n// Split into lines, filter out meta-commentary, rejoin\nconst lines = script.split('\\n');\nconst cleanLines = lines.filter(line => {\n  const trimmed = line.trim();\n  if (!trimmed) return true; // keep blank lines\n  return !metaPatterns.some(pattern => pattern.test(trimmed));\n});\n\nscript = cleanLines.join('\\n').trim();\n\n// Remove any leading/trailing whitespace or blank lines\nscript = script.replace(/^\\s+/, '').replace(/\\s+$/, '');\n\n// Get context from previous nodes\nconst meta = $('Prepare Article Text').first().json;\n\nreturn [{\n  json: {\n    jobId: meta.jobId,\n    siteSlug: meta.siteSlug,\n    postTitle: meta.postTitle,\n    postSlug: meta.postSlug,\n    narrationText: script,\n    wordCount: script.split(/\\s+/).length\n  }\n}];"
+        "jsCode": "let script = $input.first().json.choices?.[0]?.message?.content || '';\n\nif (!script) {\n  throw new Error('LLM returned empty narration');\n}\n\n// Strip Qwen3 thinking blocks if present\nscript = script.replace(/<think>[\\s\\S]*?<\\/think>/gi, '');\n\n// Strip common LLM meta-commentary lines that appear before the actual content.\n// These are lines where the model talks ABOUT the task rather than doing it.\nconst metaPatterns = [\n  /^(okay|alright|sure|certainly|of course)[,.].*$/im,\n  /^(the user wants|the user is asking|i need to|i should|i will|i'll|let me|let's|first,? i|now,? i).*$/im,\n  /^(converting|rewriting|transforming|here is|here's|below is|the following|this is).*?(narration|script|podcast|article|text).*$/im,\n  /^(key (rules|points|things)|important:|note:|rule \\d)/im,\n  /^(I have (converted|rewritten|created)|This is (a|the) (narration|script)).*$/im,\n  /^Here is the (narration|script|podcast version).*$/im\n];\n\n// Split into lines, filter out meta-commentary, rejoin\nconst lines = script.split('\\n');\nconst cleanLines = lines.filter(line => {\n  const trimmed = line.trim();\n  if (!trimmed) return true; // keep blank lines\n  return !metaPatterns.some(pattern => pattern.test(trimmed));\n});\n\nscript = cleanLines.join('\\n').trim();\n\n// NEW: Strip remaining markdown characters that can cause hallucination/stuttering in TTS\nscript = script.replace(/[#*_~>]/g, '');\n\n// Remove any leading/trailing whitespace or blank lines\nscript = script.replace(/^\\s+/, '').replace(/\\s+$/, '');\n\n// Get context from previous nodes\nconst meta = $('Prepare Article Text').first().json;\n\nreturn [{\n  json: {\n    jobId: meta.jobId,\n    siteSlug: meta.siteSlug,\n    postTitle: meta.postTitle,\n    postSlug: meta.postSlug,\n    narrationText: script,\n    wordCount: script.split(/\\s+/).length\n  }\n}];"
       }
     },
     {
@@ -196,7 +196,10 @@
         "options": {
           "timeout": 600000
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 10000
     },
     {
       "id": "log-result",

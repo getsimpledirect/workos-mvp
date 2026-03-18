@@ -17,7 +17,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from app.core.exceptions import JobDeletedError
+from app.core.exceptions import JobDeletedError, SynthesisError, StorageError, AudioProcessingError, GCSUploadError
 from app.config import DEVICE, GCS_BUCKET_NAME, MAX_CHUNK_WORDS, OUTPUT_DIR
 from app.services.audio import (
     apply_final_mastering,
@@ -293,6 +293,29 @@ async def run_tts_job(
 
         # Step 9: Notify webhook
         await notify_job_completed(job_id, gcs_uri)
+
+    except (SynthesisError, StorageError, AudioProcessingError, GCSUploadError) as exc:
+        duration = time.time() - start_time
+        logger.error(f"[{job_id}] ✗ Job failed due to specific domain error after {duration:.1f}s: {exc}")
+        
+        _cleanup_failed_job(job_dir, final_mp3, job_id)
+        _cleanup_temp_files(normalized_temp_files, job_id)
+        _cleanup_intermediate(raw_wav, job_id)
+        _cleanup_intermediate(raw_mp3, job_id)
+        
+        error_name = exc.__class__.__name__
+        error_msg = str(exc)[:450]
+        
+        await job_store.update(
+            job_id,
+            {
+                "status": "failed",
+                "error": f"{error_name}: {error_msg}",
+                "completed_at": time.time(),
+                "duration_seconds": duration,
+            },
+        )
+        await notify_job_failed(job_id, f"{error_name}: {error_msg}")
 
     except Exception as exc:
         duration = time.time() - start_time
