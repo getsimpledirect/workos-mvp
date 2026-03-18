@@ -6,7 +6,10 @@
       "name": "Ghost: Post Published",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1.1,
-      "position": [0, 300],
+      "position": [
+        0,
+        300
+      ],
       "webhookId": "ghost-published",
       "parameters": {
         "httpMethod": "POST",
@@ -20,9 +23,12 @@
       "name": "Extract Post Metadata",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [250, 300],
+      "position": [
+        250,
+        300
+      ],
       "parameters": {
-        "jsCode": "// Extract Ghost webhook payload\nconst data = $input.first().json;\n\n// Handle manual trigger or empty payload\nif (!data || Object.keys(data).length === 0) {\n  throw new Error('Webhook triggered with no data. If testing manually, ensure you have provided a sample Ghost payload.');\n}\n\n// Ghost 5.x Structure: { \"post\": { \"current\": { ... } } }\n// We also handle flattened or nested structures for maximum compatibility\nlet post = data.post?.current || data.current || data.post || data.body?.post?.current || data.body?.post || data;\n\nif (!post || !post.id || !post.url) {\n  console.error('Payload Structure Error. Keys found:', Object.keys(data).join(', '));\n  if (data.post) console.error('Post keys:', Object.keys(data.post).join(', '));\n  throw new Error(`Ghost webhook payload missing post.current.id or url. Found keys: ${Object.keys(data).join(', ')}`);\n}\n\n// Post-processing and status check\npost.slug = post.slug || `post-${post.id}`;\npost.title = post.title || 'Untitled Post';\n\n// Process if published or updated\nconst status = post.status?.toLowerCase();\nif (status && status !== 'published' && status !== 'updated') {\n  return [{ json: { skip: true, reason: `Post status is '${status}' (expected published or updated)` } }];\n}\n\n// Extract hostname for site-specific logic\nlet siteBase = '';\nlet hostname = 'unknown-site';\ntry {\n  const urlMatch = post.url.match(/^(https?:\\/\\/([^\\/]+))/);\n  if (urlMatch) {\n    siteBase = urlMatch[1];\n    hostname = urlMatch[2];\n  }\n} catch (e) {\n  console.error('Failed to parse URL:', post.url);\n}\n\nconst siteSlug = hostname.replace(/\\./g, '-');\n// Safter extraction using pid- prefix\nconst jobId = `${siteSlug}-pid-${post.id}-${post.slug}`;\n\nreturn [{\n  json: {\n    skip: false,\n    postId: post.id,\n    postSlug: post.slug,\n    postTitle: post.title,\n    postUrl: post.url,\n    siteBase,\n    siteSlug,\n    hostname,\n    jobId,\n    timestamp: new Date().toISOString()\n  }\n}];"
+        "jsCode": "// Extract Ghost webhook payload\nconst data = $input.first().json;\n\n// Handle manual trigger or empty payload\nif (!data || Object.keys(data).length === 0) {\n  throw new Error('Webhook triggered with no data. If testing manually, ensure you have provided a sample Ghost payload.');\n}\n\n// Ghost 5.x Structure: { \"post\": { \"current\": { ... }, \"previous\": { ... } } }\n// We also handle flattened or nested structures for maximum compatibility\nlet post = data.post?.current || data.current || data.post || data.body?.post?.current || data.body?.post || data;\nlet previous = data.post?.previous || data.previous || data.body?.post?.previous;\n\nif (!post || !post.id || !post.url) {\n  console.error('Payload Structure Error. Keys found:', Object.keys(data).join(', '));\n  if (data.post) console.error('Post keys:', Object.keys(data.post).join(', '));\n  throw new Error(`Ghost webhook payload missing post.current.id or url. Found keys: ${Object.keys(data).join(', ')}`);\n}\n\n// Post-processing and status check\npost.slug = post.slug || `post-${post.id}`;\npost.title = post.title || 'Untitled Post';\n\n// Process if published or updated\nconst status = post.status?.toLowerCase();\nif (status && status !== 'published' && status !== 'updated') {\n  return [{ json: { skip: true, reason: `Post status is '${status}' (expected published or updated)` } }];      \n}\n\n// Helper to remove audio player from html/lexical for comparison\nconst stripAudioPlayer = (str) => {\n    if (!str) return '';\n    if (typeof str !== 'string') str = JSON.stringify(str);\n    return str.replace(/<!--kg-card-begin: html-->[\\s\\S]*?id=[\"']gn-audio-embed[\"'][\\s\\S]*?<!--kg-card-end: html-->/gi, '')\n              .replace(/<figure[^>]*>[\\s\\S]*?id=[\"']gn-audio-embed[\"'][\\s\\S]*?<\\/figure>/gi, '')\n              .replace(/<div[^>]*id=[\"']gn-audio-embed[\"'][^>]*>[\\s\\S]*?<\\/div>/gi, '')\n              .replace(/Listen to article/gi, '')\n              .replace(/Speed/gi, '')\n              .replace(/\\s+/g, ' ')\n              .trim();\n};\n\n// Edge Case: Check if this is an update and if relevant content actually changed\nif (previous && Object.keys(previous).length > 0) {\n  // If it's a transition to 'published' from another status (e.g., 'draft'), it's a new publish. We should process it.\n  const isNewlyPublished = previous.hasOwnProperty('status') && previous.status !== 'published' && status === 'published';\n  \n  // Check if title or slug changed\n  const metaChanged = previous.hasOwnProperty('title') || previous.hasOwnProperty('slug');\n  \n  // Check if content changed, ignoring the audio player embed itself (prevent infinite loops from our own updates)\n  let contentChanged = false;\n  const contentFields = ['html', 'mobiledoc', 'lexical', 'plaintext'];\n  \n  for (const field of contentFields) {\n      if (previous.hasOwnProperty(field)) {\n          const oldVal = stripAudioPlayer(previous[field]);\n          const newVal = stripAudioPlayer(post[field]);\n          if (oldVal !== newVal) {\n              contentChanged = true;\n              break;\n          }\n      }\n  }\n  \n  if (!isNewlyPublished && !metaChanged && !contentChanged) {\n    return [{ json: { skip: true, reason: 'Post updated, but no relevant content (title, content, slug) changed. (Ignored audio player embed changes to prevent loops)' } }];\n  }\n}\n\n// Extract hostname for site-specific logic\nlet siteBase = '';\nlet hostname = 'unknown-site';\ntry {\n  const urlMatch = post.url.match(/^(https?:\\/\\/([^\\/]+))/);\n  if (urlMatch) {\n    siteBase = urlMatch[1];\n    hostname = urlMatch[2];\n  }\n} catch (e) {\n  console.error('Failed to parse URL:', post.url);\n}\n\nconst siteSlug = hostname.replace(/\\./g, '-');\n// Safter extraction using pid- prefix\n// Append timestamp so updates get a fresh TTS job instead of hitting the completed cache\nconst jobId = `${siteSlug}-pid-${post.id}-${post.slug}-${Date.now()}`;\n\nreturn [{\n  json: {\n    skip: false,\n    postId: post.id,\n    postSlug: post.slug,\n    postTitle: post.title,\n    postUrl: post.url,\n    siteBase,\n    siteSlug,\n    hostname,\n    jobId,\n    timestamp: new Date().toISOString()\n  }\n}];"
       }
     },
     {
@@ -30,7 +36,10 @@
       "name": "Should Process?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.1,
-      "position": [500, 300],
+      "position": [
+        500,
+        300
+      ],
       "parameters": {
         "conditions": {
           "options": {
@@ -58,7 +67,10 @@
       "name": "Log Skipped",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [750, 450],
+      "position": [
+        750,
+        450
+      ],
       "parameters": {
         "jsCode": "console.log('Skipped:', $input.first().json.reason);\nreturn $input.all();"
       }
@@ -68,7 +80,10 @@
       "name": "Fetch Full Article",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [750, 200],
+      "position": [
+        750,
+        200
+      ],
       "parameters": {
         "method": "GET",
         "url": "={{ $json.siteBase }}/ghost/api/content/posts/slug/{{ $json.postSlug }}/",
@@ -104,7 +119,10 @@
       "name": "Prepare Article Text",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1000, 200],
+      "position": [
+        1000,
+        200
+      ],
       "parameters": {
         "jsCode": "const item = $input.first().json;\nconst post = item.posts?.[0];\n\nif (!post) {\n  throw new Error('Could not fetch article from Ghost API');\n}\n\n// Clean up the plaintext\nlet text = post.plaintext || '';\ntext = text.replace(/\\n{3,}/g, '\\n\\n').trim();\n\n// Get metadata from previous node\nconst meta = $('Extract Post Metadata').first().json;\n\nreturn [{\n  json: {\n    jobId: meta.jobId,\n    siteSlug: meta.siteSlug,\n    postTitle: post.title,\n    postSlug: post.slug,\n    articleText: text,\n    wordCount: text.split(/\\s+/).length\n  }\n}];"
       }
@@ -114,7 +132,10 @@
       "name": "Convert to Narration (LLM)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1250, 200],
+      "position": [
+        1250,
+        200
+      ],
       "parameters": {
         "method": "POST",
         "url": "={{ $env.VLLM_BASE_URL }}/chat/completions",
@@ -140,7 +161,10 @@
       "name": "Parse Narration",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1500, 200],
+      "position": [
+        1500,
+        200
+      ],
       "parameters": {
         "jsCode": "let script = $input.first().json.choices?.[0]?.message?.content || '';\n\nif (!script) {\n  throw new Error('LLM returned empty narration');\n}\n\n// Strip Qwen3 thinking blocks if present\nscript = script.replace(/<think>[\\s\\S]*?<\\/think>/gi, '');\n\n// Strip common LLM meta-commentary lines that appear before the actual content.\n// These are lines where the model talks ABOUT the task rather than doing it.\nconst metaPatterns = [\n  /^(okay|alright|sure|certainly|of course)[,.].*$/im,\n  /^(the user wants|the user is asking|i need to|i should|i will|i'll|let me|let's|first,? i|now,? i).*$/im,\n  /^(converting|rewriting|transforming|here is|here's|below is|the following|this is).*?(narration|script|podcast|article|text).*$/im,\n  /^(key (rules|points|things)|important:|note:|rule \\d)/im,\n  /^(I have (converted|rewritten|created)|This is (a|the) (narration|script)).*$/im,\n  /^Here is the (narration|script|podcast version).*$/im\n];\n\n// Split into lines, filter out meta-commentary, rejoin\nconst lines = script.split('\\n');\nconst cleanLines = lines.filter(line => {\n  const trimmed = line.trim();\n  if (!trimmed) return true; // keep blank lines\n  return !metaPatterns.some(pattern => pattern.test(trimmed));\n});\n\nscript = cleanLines.join('\\n').trim();\n\n// Remove any leading/trailing whitespace or blank lines\nscript = script.replace(/^\\s+/, '').replace(/\\s+$/, '');\n\n// Get context from previous nodes\nconst meta = $('Prepare Article Text').first().json;\n\nreturn [{\n  json: {\n    jobId: meta.jobId,\n    siteSlug: meta.siteSlug,\n    postTitle: meta.postTitle,\n    postSlug: meta.postSlug,\n    narrationText: script,\n    wordCount: script.split(/\\s+/).length\n  }\n}];"
       }
@@ -150,7 +174,10 @@
       "name": "Submit TTS Job",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1750, 200],
+      "position": [
+        1750,
+        200
+      ],
       "parameters": {
         "method": "POST",
         "url": "={{ $env.TTS_SERVICE_URL }}/tts/generate",
@@ -176,7 +203,10 @@
       "name": "Log Result",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2000, 200],
+      "position": [
+        2000,
+        200
+      ],
       "parameters": {
         "jsCode": "const result = $input.first().json;\nconsole.log('TTS Job submitted:', result);\nreturn [{ json: { success: true, ...result } }];"
       }

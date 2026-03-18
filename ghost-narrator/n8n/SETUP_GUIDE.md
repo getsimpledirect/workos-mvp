@@ -97,16 +97,21 @@ The workflow automatically detects which site by checking the hostname:
 
 ## Step 3: Configure Ghost Webhooks
 
-For **each** of your Ghost websites, you must tell them to alert n8n when an article is published.
+For **each** of your Ghost websites, you must tell them to alert n8n when an article is published or updated.
 
 1.  Go to **Ghost Admin** → **Settings** → **Integrations**.
 2.  Click on the Custom Integration you created for this pipeline (or Add a new one).
 3.  Scroll down to **Webhooks** and click **Add webhook**.
-4.  **Name:** `Audio Pipeline Trigger`
+4.  **Name:** `Audio Pipeline Trigger - Published`
 5.  **Event:** Select `Post published`.
 6.  **Target URL:** Enter the Webhook URL from your *first* workflow.
     *   It will look something like: `http://YOUR_VM_IP:5678/webhook/ghost-published`
 7.  Save the integration.
+8.  Click **Add webhook** again.
+9.  **Name:** `Audio Pipeline Trigger - Updated`
+10. **Event:** Select `Post updated`.
+11. **Target URL:** Enter the EXACT SAME Webhook URL as above.
+12. Save the integration.
 
 **You do not need to configure a webhook in Ghost for the second workflow (`tts-callback`).** The TTS service itself automatically triggers the second workflow.
 
