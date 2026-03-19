@@ -90,7 +90,7 @@ if [ "${1:-}" = "--stop" ]; then
     fi
     BG_PID=$(cat "$PID_FILE")
     if kill -0 "$BG_PID" 2>/dev/null; then
-        kill "$BG_PID"
+        kill -- -"$BG_PID" 2>/dev/null || kill "$BG_PID"
         rm -f "$PID_FILE"
         success "Stopped background backfill (PID $BG_PID)"
     else
@@ -233,9 +233,13 @@ if [ "$BACKGROUND" = true ]; then
         done
     } > "$CFG_FILE"
 
-    # Launch in background
+    # Launch in background in its own process group so --stop can kill all children
     echo "" > "$LOG_FILE"
-    nohup bash "$SCRIPT_PATH" --config "$CFG_FILE" >> "$LOG_FILE" 2>&1 &
+    if command -v setsid &>/dev/null; then
+        setsid bash "$SCRIPT_PATH" --config "$CFG_FILE" >> "$LOG_FILE" 2>&1 &
+    else
+        nohup bash "$SCRIPT_PATH" --config "$CFG_FILE" >> "$LOG_FILE" 2>&1 &
+    fi
     BG_PID=$!
     echo "$BG_PID" > "$PID_FILE"
     # Prevent EXIT trap from deleting CFG_FILE — the background process needs it
