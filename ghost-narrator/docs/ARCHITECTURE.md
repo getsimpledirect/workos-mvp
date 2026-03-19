@@ -344,7 +344,7 @@ Expected response:
 - **Built-in Google Cloud Storage node** — no custom code to upload files
 - **Visual workflow editor** — debug, replay, and modify without touching code
 - **Execution history** — see exactly what happened for every article processed
-- Runs as a lightweight Docker container (~200MB RAM)
+- Runs as a Docker container (2 GB RAM limit, ~200–800 MB typical usage)
 - Free, open-source, self-hosted
 
 **How it works in this pipeline:** n8n acts as the "traffic controller." It receives the webhook from Ghost, calls your vLLM API (using an HTTP Request node), calls the TTS service, and then uploads to GCS using its built-in GCS node — all wired together visually.
@@ -504,7 +504,7 @@ This is the most critical concern. Here's the breakdown:
 | Qwen3-14B (AWQ 4-bit) | ~7–8 GB | ~2 GB | Already running in your vLLM setup |
 | Fish Speech v1.5 (GPU mode) | ~2–3 GB | ~6 GB | CLI-based inference with DAC + text2semantic |
 | Redis | 0 GB VRAM | ~50 MB | Persistent job storage |
-| n8n | 0 GB VRAM | ~200 MB | Workflow orchestration |
+| n8n | 0 GB VRAM | up to 2 GB | Workflow orchestration (2 GB container limit) |
 | **Total (GPU mode)** | **~10–11 GB** | **~8.3 GB** | Fits in L4 with headroom |
 | Fish Speech v1.5 (CPU mode) | 0 GB VRAM | ~1 GB | **Recommended - parallel synthesis** |
 | **Total (CPU mode)** | **~8 GB VRAM** | **~2.3 GB** | **vLLM on GPU, TTS on CPU - optimal** |
@@ -779,7 +779,7 @@ Rules:
 
 **Why "Output ONLY the narration text"?** Without this, the LLM often adds things like "Here's the narration:" or "Sure, here is the script:" at the start, which would get read aloud in the audio. We strip that with the instruction.
 
-**Timeout is set to 120,000ms (2 min)** — Qwen3-14B can take ~30–90 seconds for a long article rewrite.
+**Timeout is set to 300,000ms (5 min)** — Qwen3-14B can take ~30–90 seconds for a short article and up to 4–5 minutes for a long one when generating a full-length narration script.
 
 **Configuration:** The vLLM URL is passed via environment variable `VLLM_BASE_URL` (default: `http://host.docker.internal:8001/v1`) allowing easy switching between local and remote vLLM instances.
 

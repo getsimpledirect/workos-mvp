@@ -77,6 +77,21 @@ services:
       - N8N_PROTOCOL=http
       # Database
       - DB_TYPE=sqlite
+      - DB_SQLITE_VACUUM_ON_STARTUP=true
+      # Execution history pruning — prevents SQLite from growing unbounded
+      - EXECUTIONS_DATA_PRUNE=true
+      - EXECUTIONS_DATA_MAX_AGE=168
+      - EXECUTIONS_DATA_PRUNE_MAX_COUNT=1000
+      # Binary data on filesystem so large payloads don't bloat the V8 heap
+      - N8N_DEFAULT_BINARY_DATA_MODE=filesystem
+      # Raise the payload limit to handle large article HTML (default is 16MB)
+      - N8N_PAYLOAD_SIZE_MAX=50
+      # Cap Node.js V8 old-space heap to 1536MB — must stay below the container
+      # memory limit (2GB) to avoid silent OOM kills
+      - NODE_OPTIONS=--max-old-space-size=1536
+      # Limit concurrent workflow executions — prevents memory spikes when a
+      # backfill run overlaps with a live Ghost publish webhook
+      - N8N_CONCURRENCY_PRODUCTION_LIMIT=10
       # Logging
       - N8N_LOG_LEVEL=info
       # Timezone
@@ -106,9 +121,11 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G
+          cpus: '2'
+          memory: 2G
         reservations:
-          memory: 512M
+          cpus: '0.25'
+          memory: 1G
 
   # ─── TTS Service: Studio-Quality API ──────────────────────────────────────────
   tts-service:
@@ -154,8 +171,8 @@ services:
         ]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 180s
+      retries: 5
+      start_period: 300s
     deploy:
       resources:
         limits:
@@ -174,8 +191,6 @@ volumes:
   n8n_data:
     driver: local
   tts_output:
-    driver: local
-  tts_model_cache:
     driver: local
 
 # ─── Networks ──────────────────────────────────────────────────────────────────
