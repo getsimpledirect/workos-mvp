@@ -9,16 +9,18 @@
 1. [What This Pipeline Does](#what-this-pipeline-does)
 2. [Architecture Overview](#architecture-overview)
 3. [Build & Deployment](#build--deployment)
-4. [Component Deep Dive](#component-deep-dive)
-5. [VRAM Budget & Resource Planning](#vram-budget--resource-planning)
-6. [Directory Structure](#directory-structure)
-7. [Step-by-Step Setup](#step-by-step-setup)
-8. [n8n Workflow — Node-by-Node Explanation](#n8n-workflow--node-by-node-explanation)
-9. [Ghost Webhook Configuration](#ghost-webhook-configuration)
-10. [Voice Clone Preparation](#voice-clone-preparation)
-11. [GCS Bucket & IAM Setup](#gcs-bucket--iam-setup)
-12. [Testing & Troubleshooting](#testing--troubleshooting)
-13. [Cost Analysis](#cost-analysis)
+4. [TTS Service Overview](#tts-service-overview)
+5. [Component Deep Dive](#component-deep-dive)
+6. [VRAM Budget & Resource Planning](#vram-budget--resource-planning)
+7. [Directory Structure](#directory-structure)
+8. [Step-by-Step Setup](#step-by-step-setup)
+9. [n8n Workflow — Node-by-Node Explanation](#n8n-workflow--node-by-node-explanation)
+10. [Ghost Webhook Configuration](#ghost-webhook-configuration)
+11. [Voice Clone Preparation](#voice-clone-preparation)
+12. [GCS Bucket & IAM Setup](#gcs-bucket--iam-setup)
+13. [Testing & Troubleshooting](#testing--troubleshooting)
+14. [Backfilling Audio for Existing Posts](#backfilling-audio-for-existing-posts)
+15. [Cost Analysis](#cost-analysis)
 
 ---
 
@@ -309,11 +311,9 @@ Expected response:
 
 ---
 
-## Component Deep Dive
+## TTS Service Overview
 
-### TTS Service (Fish Speech v1.5)
-
-**Technology Stack:**
+### Technology Stack
 - **Engine**: Fish Speech v1.5 (state-of-the-art zero-shot TTS)
 - **Framework**: FastAPI + Uvicorn
 - **Audio Processing**: librosa, soundfile, pydub, pytorch
@@ -561,7 +561,10 @@ ghost-narrator/
 │
 ├── scripts/
 │   ├── init.sh                    # Production initialization script
-│   └── setup-gcp.sh               # GCP resources setup (bucket, IAM, SA)
+│   ├── setup-gcp.sh               # GCP resources setup (bucket, IAM, SA)
+│   ├── validate-build.sh          # Docker image validation and smoke tests
+│   ├── backfill-audio.sh          # Backfill audio for existing posts (Linux/macOS)
+│   └── backfill-audio.ps1         # Backfill audio for existing posts (Windows)
 │
 └── tts-service/
     ├── .dockerignore
@@ -911,11 +914,6 @@ curl http://localhost:8020/tts/status/test-voice-clone
 
 # Download the audio:
 curl -o test-voice.mp3 http://localhost:8020/tts/download/test-voice-clone
-import sys, json
-data = json.load(sys.stdin)
-print('File ready at:', data['download_url'])
-print('Duration:', data['duration_estimate_seconds'], 'seconds')
-"
 ```
 
 ---
@@ -1065,6 +1063,114 @@ In n8n UI, open the workflow → click **"Test Workflow"** → manually trigger 
 - Reduce `MAX_WORKERS` if using many parallel workers
 - Streaming concatenation automatically activates for large files (>10 chunks)
 - Monitor memory usage: `docker stats tts-service`
+
+---
+
+## Backfilling Audio for Existing Posts
+
+The Ghost Narrator pipeline processes articles automatically when they are published. For posts that existed before the pipeline was set up, the `scripts/backfill-audio` scripts trigger the same n8n pipeline retroactively — working through your post archive one article at a time at a controlled pace.
+
+### When to Use This
+
+- You just deployed the pipeline and have a back-catalogue of published articles without audio
+- The pipeline was temporarily down and a batch of posts was published without being narrated
+- You want to regenerate audio for posts after a voice reference update
+
+### Prerequisites
+
+Before running the backfill:
+1. Services are running: `docker compose ps` should show `tts-service`, `redis`, and `n8n` all healthy
+2. The n8n workflow is active (toggle is green in the n8n UI)
+3. You have the **Content API key** for each Ghost site (read-only — found in Ghost Admin → Settings → Integrations)
+4. `curl` and `jq` are installed (Linux/macOS only): `sudo apt install curl jq`
+
+### Running the Script
+
+**Linux / macOS:**
+```bash
+cd ghost-narrator
+bash scripts/backfill-audio.sh
+```
+
+**Windows (PowerShell):**
+```powershell
+cd ghost-narrator
+.\scripts\backfill-audio.ps1
+```
+
+### Interactive Prompts
+
+The script walks you through configuration step by step:
+
+| Prompt | Default | Notes |
+|---|---|---|
+| n8n webhook URL | `http://34.130.76.88:5678/webhook/ghost-published` | Your VM's public IP — change if different |
+| Number of Ghost sites | `1` | Enter `2` to process both sites in one run |
+| Ghost URL | *(required)* | e.g. `https://ghost.founderreality.com` |
+| Content API key | *(required)* | From Ghost Admin → Integrations |
+| Delay between jobs (seconds) | `300` | See pacing guide below |
+| Dry run? | `N` | Enter `y` to preview without triggering |
+
+### Choosing the Right Delay
+
+The delay prevents the TTS service from being overloaded. Tune it based on your typical article length:
+
+| Article length | Recommended delay |
+|---|---|
+| ~1,000 words | 180 s (3 min) |
+| ~2,000 words | 300 s (5 min) — default |
+| ~4,000 words | 600 s (10 min) |
+
+If you exceed the TTS service capacity, jobs will queue in Redis and process in order — but a shorter delay risks the service accumulating a growing backlog. When in doubt, use the default 300 s.
+
+### What Happens During Execution
+
+1. All published posts are fetched from the Ghost Content API (paginated, all pages)
+2. Posts are split into two groups:
+   - **Already has audio** (`<audio>` tag present in HTML) → skipped automatically
+   - **Needs audio** → queued for narration
+3. The full list of posts to be processed is shown with the estimated total time
+4. After confirmation, each post is submitted to the n8n pipeline as a webhook payload matching the format Ghost itself sends on publish
+5. A live countdown is shown between jobs
+6. A summary of triggered / skipped / errored jobs is printed at the end
+
+### Monitoring Progress
+
+While the script runs, monitor the pipeline in parallel:
+
+```bash
+# n8n workflow executions
+open http://34.130.76.88:5678
+
+# TTS job status
+curl http://34.130.76.88:8020/health
+
+# Live TTS logs
+docker logs -f tts-service
+
+# Live n8n logs
+docker logs -f n8n
+```
+
+### Resuming After Interruption
+
+The script is safe to re-run at any time. Posts that already have an `<audio>` element embedded are automatically detected and skipped, so you will never double-process an article. If the script was interrupted mid-run, simply execute it again with the same parameters — it will pick up from where it left off.
+
+### Dry Run
+
+Use dry-run mode to audit which posts need audio before committing to a full backfill:
+
+```bash
+# Linux/macOS
+bash scripts/backfill-audio.sh
+# → Answer "y" at the dry run prompt
+
+# PowerShell
+.\scripts\backfill-audio.ps1
+# → Answer "y" at the dry run prompt
+```
+
+The script will list every post that needs audio along with the estimated processing time, then exit without triggering anything.
 
 ---
 

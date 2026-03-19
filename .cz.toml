@@ -6,9 +6,8 @@ version_files = [
     "VERSION",
     "ghost-narrator/tts-service/app/__init__.py:__version__"
 ]
-update_changelog_on_bump = true
+update_changelog_on_bump = false
 changelog_file = "ghost-narrator/CHANGELOG.md"
-changelog_incremental = true
 
 [tool.commitizen.customize]
 message_template = "{{change_type}}: {{message}}"

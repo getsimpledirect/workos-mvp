@@ -4,11 +4,12 @@ on:
   push:
     branches:
       - main
-      - develop
 
 jobs:
   bump-version:
-    if: "!contains(github.event.head_commit.message, 'bump:')"
+    # Skip if this push IS the bump commit itself (prevents infinite loop).
+    # Uses startsWith to avoid false matches on messages like "chore: bump deps".
+    if: "!startsWith(github.event.head_commit.message, 'bump:')"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -30,21 +31,36 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
 
-      - name: Bump version and update changelog
+      - name: Bump version
         id: bump
         run: |
+          set +e
           cz bump --yes
+          CZ_EXIT=$?
+          set -e
+
+          if [ $CZ_EXIT -eq 0 ]; then
+            echo "bumped=true" >> $GITHUB_OUTPUT
+          else
+            echo "No bumpable commits found (exit $CZ_EXIT) — skipping release"
+            echo "bumped=false" >> $GITHUB_OUTPUT
+          fi
+
           echo "version=$(cat VERSION)" >> $GITHUB_OUTPUT
-          
+
       - name: Push changes
-        run: |
-          git push origin ${{ github.ref_name }} --tags
+        if: steps.bump.outputs.bumped == 'true'
+        run: git push origin main --tags
+
+      - name: Generate release notes
+        if: steps.bump.outputs.bumped == 'true'
+        run: cz changelog --dry-run > /tmp/release_notes.md
 
       - name: Create GitHub Release
-        if: github.ref == 'refs/heads/main'
+        if: steps.bump.outputs.bumped == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.bump.outputs.version }}
-          body_path: ghost-narrator/CHANGELOG.md
+          body_path: /tmp/release_notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
