@@ -53,6 +53,16 @@ MAX_TEXT_LENGTH: Final[int] = 100_000
 VALID_JOB_ID_PATTERN: Final[re.Pattern[str]] = re.compile(r"^[a-zA-Z0-9_-]{1,200}$")
 MAX_JOB_ID_LENGTH: Final[int] = 200
 
+# TTS timeout settings
+try:
+    SEMANTIC_TOKEN_TIMEOUT: Final[int] = max(60, int(os.environ.get("SEMANTIC_TOKEN_TIMEOUT", "360")))
+except ValueError:
+    SEMANTIC_TOKEN_TIMEOUT: Final[int] = 360
+try:
+    AUDIO_DECODE_TIMEOUT: Final[int] = max(30, int(os.environ.get("AUDIO_DECODE_TIMEOUT", "180")))
+except ValueError:
+    AUDIO_DECODE_TIMEOUT: Final[int] = 180
+
 # Audio settings
 MP3_BITRATE: Final[str] = "128k"
 STREAMING_THRESHOLD_MS: Final[int] = 600_000

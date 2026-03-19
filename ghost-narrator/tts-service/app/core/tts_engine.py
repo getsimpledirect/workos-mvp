@@ -21,7 +21,7 @@ import numpy as np
 import soundfile as sf
 import torch
 from faster_whisper import WhisperModel
-from app.config import DEVICE, TTS_LANGUAGE, VOICE_SAMPLE_PATH, MAX_WORKERS
+from app.config import DEVICE, TTS_LANGUAGE, VOICE_SAMPLE_PATH, MAX_WORKERS, SEMANTIC_TOKEN_TIMEOUT, AUDIO_DECODE_TIMEOUT
 from app.core.exceptions import SynthesisError, TTSEngineError, VoiceSampleNotFoundError
 
 logger = logging.getLogger(__name__)
@@ -394,11 +394,11 @@ class TTSEngine:
             
             self._register_process(job_id, proc)
             try:
-                stdout, stderr = proc.communicate(timeout=180)
+                stdout, stderr = proc.communicate(timeout=SEMANTIC_TOKEN_TIMEOUT)
             except subprocess.TimeoutExpired:
                 proc.kill()
                 stdout, stderr = proc.communicate()
-                raise SynthesisError("Semantic token generation timed out (>180s)")
+                raise SynthesisError(f"Semantic token generation timed out (>{SEMANTIC_TOKEN_TIMEOUT}s)")
             finally:
                 self._unregister_process(job_id, proc)
 
@@ -471,11 +471,11 @@ class TTSEngine:
             
             self._register_process(job_id, proc)
             try:
-                stdout, stderr = proc.communicate(timeout=120)
+                stdout, stderr = proc.communicate(timeout=AUDIO_DECODE_TIMEOUT)
             except subprocess.TimeoutExpired:
                 proc.kill()
                 stdout, stderr = proc.communicate()
-                raise SynthesisError("Audio decoding timed out (>120s)")
+                raise SynthesisError(f"Audio decoding timed out (>{AUDIO_DECODE_TIMEOUT}s)")
             finally:
                 self._unregister_process(job_id, proc)
 
