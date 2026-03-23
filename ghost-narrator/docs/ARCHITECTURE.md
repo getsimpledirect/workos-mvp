@@ -306,7 +306,7 @@ curl http://localhost:8020/health
 
 Expected response:
 ```json
-{"status": "healthy", "device": "cpu", "model": "fish-speech-1.5", "voice_sample": true, "model_loaded": true, "job_store": "redis", "jobs_count": 0, "max_workers": 4}
+{"status": "healthy", "device": "cpu", "model": "fish-speech-1.5", "voice_sample": true, "model_loaded": true, "reference_audio_present": true, "reference_tokens_present": true, "tts_engine_ready": true, "job_store": "redis", "jobs_count": 0, "max_workers": 4, "executor_active": true, "gcs_client_active": true}
 ```
 
 ---
@@ -350,8 +350,9 @@ Expected response:
 **How it works in this pipeline:** n8n acts as the "traffic controller." It receives the webhook from Ghost, calls your vLLM API (using an HTTP Request node), calls the TTS service, and then uploads to GCS using its built-in GCS node — all wired together visually.
 
 **Workflows:**
-1. **ghost-audio-pipeline.json**: Main synthesis workflow (webhook → vLLM → TTS → GCS)
+1. **ghost-audio-pipeline.json**: Main synthesis workflow (Ghost webhook → vLLM → TTS → GCS)
 2. **ghost-audio-callback.json**: Callback embedder workflow (TTS complete → Ghost update)
+3. **static-content-audio-pipeline.json**: Static content workflow (manual webhook → vLLM → TTS → GCS, no Ghost embed)
 
 ---
 
@@ -556,8 +557,9 @@ ghost-narrator/
 ├── n8n/
 │   ├── SETUP_GUIDE.md             # n8n workflow setup guide
 │   └── workflows/
-│       ├── ghost-audio-callback.json    # Callback embedder workflow
-│       └── ghost-audio-pipeline.json    # Main synthesis workflow
+│       ├── ghost-audio-callback.json          # Callback embedder workflow
+│       ├── ghost-audio-pipeline.json          # Main synthesis workflow
+│       └── static-content-audio-pipeline.json # Static/non-Ghost content synthesis
 │
 ├── scripts/
 │   ├── init.sh                    # Production initialization script
@@ -802,7 +804,7 @@ This node digs into `choices[0].message.content` and passes it forward along wit
 Calls your TTS service:
 ```
 POST http://tts-service:8020/tts/generate
-Body: { "text": "..narration script..", "job_id": "site-slug", "article_slug": "slug" }
+Body: { "text": "..narration script..", "job_id": "site-pid-{postId}-{slug}-{timestamp}", "site_slug": "founderreality-com" }
 ```
 
 The TTS service returns immediately with job queued status:
@@ -962,7 +964,7 @@ gsutil cors set /tmp/cors.json gs://YOUR_BUCKET_NAME/
 ### Test 1: TTS Service Health
 ```bash
 curl http://localhost:8020/health
-# Expected: {"status":"healthy","device":"cpu","model":"fish-speech-1.5","voice_sample":true,"model_loaded":true,"job_store":"redis","jobs_count":0,"max_workers":4}
+# Expected: {"status":"healthy","device":"cpu","model":"fish-speech-1.5","voice_sample":true,"model_loaded":true,"reference_audio_present":true,"reference_tokens_present":true,"tts_engine_ready":true,"job_store":"redis","jobs_count":0,"max_workers":4,"executor_active":true,"gcs_client_active":true}
 
 # Readiness check (engine fully initialized):
 curl http://localhost:8020/health/ready

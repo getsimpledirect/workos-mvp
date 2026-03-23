@@ -117,11 +117,17 @@ curl http://localhost:8020/health
 {
   "status": "healthy",
   "device": "cpu",
+  "model": "fish-speech-1.5",
   "voice_sample": true,
   "model_loaded": true,
+  "reference_audio_present": true,
+  "reference_tokens_present": true,
+  "tts_engine_ready": true,
   "job_store": "redis",
   "jobs_count": 0,
-  "max_workers": 4
+  "max_workers": 4,
+  "executor_active": true,
+  "gcs_client_active": true
 }
 ```
 

@@ -205,7 +205,7 @@ cd ghost-narrator
 cp .env.example .env
 # Edit .env with your configuration
 
-# Add your voice sample (30-60 seconds WAV)
+# Add your voice sample (6-60 seconds WAV, 45+ seconds recommended)
 cp /path/to/your/voice.wav tts-service/voices/reference.wav
 
 # Initialize and start services
@@ -267,8 +267,8 @@ N8N_USER=admin
 N8N_PASSWORD=your-secure-password
 N8N_ENCRYPTION_KEY=<openssl rand -hex 32>
 GCS_BUCKET_NAME=your-gcs-bucket-name
-VLLM_BASE_URL=http://host.docker.internal:8001/v1
-VLLM_MODEL_NAME=Qwen/Qwen3-14B
+VLLM_BASE_URL=http://host.docker.internal:8000
+VLLM_MODEL_NAME=Qwen/Qwen3-14B-AWQ
 GHOST_SITE1_ADMIN_API_KEY=your-admin-key-1
 GHOST_SITE2_ADMIN_API_KEY=your-admin-key-2
 TTS_DEVICE=cpu
@@ -399,8 +399,9 @@ workos-mvp/
     │
     ├── n8n/
     │   └── workflows/
-    │       ├── ghost-audio-pipeline.json  # Synthesizes audio
-    │       └── ghost-audio-callback.json  # Embeds audio in Ghost
+    │       ├── ghost-audio-pipeline.json         # Synthesizes audio from Ghost posts
+    │       ├── ghost-audio-callback.json         # Embeds audio player in Ghost
+    │       └── static-content-audio-pipeline.json # Synthesizes audio from static content
     │
     ├── scripts/
     │   ├── init.sh             # VM initialization script
