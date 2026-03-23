@@ -10,9 +10,9 @@ import logging
 import time
 import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Body, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Body, HTTPException, Path as FastApiPath
 from fastapi.responses import FileResponse
 
 from app.config import (
@@ -32,9 +32,6 @@ from app.models.schemas import (
 )
 from app.services.job_store import get_job_store
 from app.services.tts_job import run_tts_job
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 
@@ -149,34 +146,25 @@ async def generate(
     # Sanitize and validate job ID
     job_id = _sanitize_job_id(request.job_id)
 
-    # Validate GCS path if provided
-    if request.gcs_path:
-        if ".." in request.gcs_path or request.gcs_path.startswith("/"):
-            raise HTTPException(
-                status_code=422,
-                detail="gcs_path must not contain '..' or start with '/'",
-            )
-
-    # Check for existing job
+    # Atomically check for existing job and create initial record
     job_store = get_job_store()
-    if await job_store.exists(job_id):
+    initial_data = {
+        "status": "queued",
+        "gcs_uri": None,
+        "local_path": None,
+        "created_at": time.time(),
+    }
+    
+    created = await job_store.create_if_not_exists(job_id, initial_data)
+    
+    if not created:
         existing_job = await job_store.get(job_id)
-        if existing_job and existing_job.get("status") not in ("failed",):
-            return GenerateResponse(
-                job_id=job_id,
-                status=existing_job["status"],
-            )
-
-    # Create initial job record
-    await job_store.set(
-        job_id,
-        {
-            "status": "queued",
-            "gcs_uri": None,
-            "local_path": None,
-            "created_at": time.time(),
-        },
-    )
+        existing_status = existing_job.get("status") if existing_job else None
+        if existing_status in ("queued", "processing", "paused"):
+            # Job is active — return the existing job rather than duplicating
+            return GenerateResponse(job_id=job_id, status=existing_status)
+        # Job is terminal (completed/failed/deleted) or missing — allow re-run
+        await job_store.set(job_id, initial_data)
 
     # Build GCS object path
     gcs_object_path = request.gcs_path or (
@@ -206,7 +194,9 @@ async def generate(
         404: {"description": "Job not found"},
     },
 )
-async def get_status(job_id: str) -> StatusResponse:
+async def get_status(
+    job_id: str = FastApiPath(..., pattern=r"^[a-zA-Z0-9_-]+$", max_length=200)
+) -> StatusResponse:
     """Get the status of a TTS job."""
     job_store = get_job_store()
     job_data = await job_store.get(job_id)
@@ -231,7 +221,9 @@ async def get_status(job_id: str) -> StatusResponse:
         410: {"description": "Audio file no longer available"},
     },
 )
-async def download(job_id: str) -> FileResponse:
+async def download(
+    job_id: str = FastApiPath(..., pattern=r"^[a-zA-Z0-9_-]+$", max_length=200)
+) -> FileResponse:
     """Download the generated MP3 audio file."""
     job_store = get_job_store()
     job = await job_store.get(job_id)
@@ -255,7 +247,12 @@ async def download(job_id: str) -> FileResponse:
             detail="Audio file path not recorded",
         )
 
-    file_path = Path(local_path)
+    file_path = Path(local_path).resolve()
+    if not str(file_path).startswith(str(OUTPUT_DIR.resolve())):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid file path",
+        )
     if not file_path.exists():
         raise HTTPException(
             status_code=410,
@@ -296,7 +293,9 @@ async def download(job_id: str) -> FileResponse:
         409: {"description": "Job already completed or failed"},
     },
 )
-async def pause_job(job_id: str) -> StatusResponse:
+async def pause_job(
+    job_id: str = FastApiPath(..., pattern=r"^[a-zA-Z0-9_-]+$", max_length=200)
+) -> StatusResponse:
     """Pause a TTS job."""
     job_store = get_job_store()
     job = await job_store.get(job_id)
@@ -328,7 +327,9 @@ async def pause_job(job_id: str) -> StatusResponse:
         409: {"description": "Job not paused"},
     },
 )
-async def resume_job(job_id: str) -> StatusResponse:
+async def resume_job(
+    job_id: str = FastApiPath(..., pattern=r"^[a-zA-Z0-9_-]+$", max_length=200)
+) -> StatusResponse:
     """Resume a TTS job."""
     job_store = get_job_store()
     job = await job_store.get(job_id)
@@ -357,7 +358,9 @@ async def resume_job(job_id: str) -> StatusResponse:
         404: {"description": "Job not found"},
     },
 )
-async def delete_job(job_id: str) -> dict[str, Any]:
+async def delete_job(
+    job_id: str = FastApiPath(..., pattern=r"^[a-zA-Z0-9_-]+$", max_length=200)
+) -> dict[str, Any]:
     """Delete a TTS job and cleanup resources."""
     job_store = get_job_store()
     job = await job_store.get(job_id)
@@ -367,9 +370,14 @@ async def delete_job(job_id: str) -> dict[str, Any]:
 
     # 1. Update status to 'deleted' to signal the background worker to stop
     await job_store.update(job_id, {"status": "deleted"})
+    
+    # 2. Instantly kill any active synthesis processes
+    from app.core.tts_engine import get_tts_engine
+    get_tts_engine().cancel_job(job_id)
+    
     logger.info(f"TTS job signal for deletion: {job_id}")
 
-    # 2. Cleanup local files if they exist
+    # 3. Cleanup local files if they exist
     job_dir = OUTPUT_DIR / job_id
     final_mp3 = OUTPUT_DIR / f"{job_id}.mp3"
     raw_wav = OUTPUT_DIR / f"{job_id}_raw.wav"

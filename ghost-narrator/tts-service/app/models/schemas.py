@@ -47,8 +47,10 @@ class GenerateRequest(BaseModel):
     @field_validator("gcs_path")
     @classmethod
     def validate_gcs_path(cls, value: Optional[str]) -> Optional[str]:
-        """Validate GCS path has no path traversal."""
+        """Validate GCS path has no path traversal. Empty string treated as None."""
         if value is not None:
+            if not value.strip():
+                return None
             if ".." in value or value.startswith("/"):
                 raise ValueError("gcs_path must not contain '..' or start with '/'")
         return value

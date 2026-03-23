@@ -41,6 +41,7 @@ if ($Help) {
     Write-Host "  TTS_DEVICE        cpu or cuda (default: cpu)"
     Write-Host "  TTS_LANGUAGE      Language code (default: en)"
     Write-Host "  MAX_CHUNK_WORDS   Max words per chunk (default: 200)"
+    Write-Host "  MAX_WORKERS       Thread pool size for parallel synthesis (default: 4)"
     Write-Host ""
     Write-Host "Examples:"
     Write-Host "  # Run in background"
@@ -216,12 +217,14 @@ Write-Host ""
 $TTS_LANG = if ($env:TTS_LANGUAGE) { $env:TTS_LANGUAGE } else { 'en' }
 $MAX_WORDS = if ($env:MAX_CHUNK_WORDS) { $env:MAX_CHUNK_WORDS } else { '200' }
 $DEVICE_TYPE = if ($env:TTS_DEVICE) { $env:TTS_DEVICE } else { 'cpu' }
+$WORKERS = if ($env:MAX_WORKERS) { $env:MAX_WORKERS } else { '4' }
 
 $envVars = @(
     "-e", "VOICE_SAMPLE_PATH=/app/voices/reference.wav",
     "-e", "TTS_LANGUAGE=$TTS_LANG",
     "-e", "MAX_CHUNK_WORDS=$MAX_WORDS",
-    "-e", "DEVICE=$DEVICE_TYPE"
+    "-e", "DEVICE=$DEVICE_TYPE",
+    "-e", "MAX_WORKERS=$WORKERS"
 )
 
 

@@ -17,7 +17,9 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from app.core.exceptions import JobDeletedError
+from pydub import AudioSegment as _AudioSegment
+
+from app.core.exceptions import JobDeletedError, SynthesisError, StorageError, AudioProcessingError, GCSUploadError
 from app.config import DEVICE, GCS_BUCKET_NAME, MAX_CHUNK_WORDS, OUTPUT_DIR
 from app.services.audio import (
     apply_final_mastering,
@@ -63,23 +65,28 @@ async def run_tts_job(
         RuntimeError: For fatal pipeline initialization or processing failures.
     """
     start_time = time.time()
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     job_dir = OUTPUT_DIR / job_id
     raw_wav = str(OUTPUT_DIR / f"{job_id}_raw.wav")
-    raw_mp3 = str(OUTPUT_DIR / f"{job_id}_raw.mp3")
     final_mp3 = str(OUTPUT_DIR / f"{job_id}.mp3")
     job_store = get_job_store()
     executor = get_executor()
 
     async def _check_status() -> None:
         """Check if job is deleted or paused."""
+        paused_iterations = 0
+        max_paused_iterations = 1800  # 30 minutes max pause
         while True:
             job = await job_store.get(job_id)
             if not job or job.get("status") == "deleted":
                 raise JobDeletedError(f"Job {job_id} was deleted")
             if job.get("status") == "paused":
+                paused_iterations += 1
+                if paused_iterations >= max_paused_iterations:
+                    raise JobDeletedError(f"Job {job_id} exceeded maximum pause duration")
                 await asyncio.sleep(1)
                 continue
+            paused_iterations = 0  # Reset counter when job is no longer paused
             return
 
     # Track temp files for cleanup
@@ -151,7 +158,6 @@ async def run_tts_job(
         # Step 2: Synthesize chunks to WAV files
         await _check_status()
         # Use auto-selection for parallel (CPU) vs sequential (GPU)
-        from app.services.synthesis import synthesize_chunks_auto
         chunk_wav_paths = await synthesize_chunks_auto(
             chunks=chunks,
             job_dir=job_dir,
@@ -219,6 +225,7 @@ async def run_tts_job(
             final_mp3,
         )
 
+        mastering_used_fallback = False
         if not mastering_ok:
             # Fallback: use the raw MP3 if mastering fails
             logger.warning(
@@ -226,9 +233,9 @@ async def run_tts_job(
             )
             # Fallback: export raw WAV to MP3 without mastering
             if Path(raw_wav).exists():
-                from pydub import AudioSegment as _AS
-                seg = _AS.from_wav(raw_wav)
+                seg = _AudioSegment.from_wav(raw_wav)
                 seg.export(final_mp3, format="mp3", bitrate="128k")
+                mastering_used_fallback = True
 
         # Verify final MP3 was created
         if not Path(final_mp3).exists():
@@ -252,6 +259,7 @@ async def run_tts_job(
         # Step 7: Upload to GCS (if configured)
         await _check_status()
         gcs_uri: Optional[str] = None
+        gcs_upload_failed = False
         if GCS_BUCKET_NAME and gcs_object_path and get_gcs_client():
             try:
                 gcs_uri = await loop.run_in_executor(
@@ -261,30 +269,32 @@ async def run_tts_job(
                     gcs_object_path,
                 )
             except Exception as exc:
-                # GCS upload failure is non-fatal
+                # GCS upload failure is non-fatal — audio is still available locally
                 logger.error(f"[{job_id}] GCS upload failed (non-fatal): {exc}")
                 gcs_uri = None
+                gcs_upload_failed = True
 
         # Step 8: Cleanup chunk directory and temp files
         cleanup_chunk_files(job_dir, job_id)
         _cleanup_temp_files(normalized_temp_files, job_id)
         _cleanup_intermediate(raw_wav, job_id)
-        _cleanup_intermediate(raw_mp3, job_id)
 
         # Calculate total duration
         total_duration = time.time() - start_time
 
         # Update job status to completed
-        await job_store.update(
-            job_id,
-            {
-                "status": "completed",
-                "gcs_uri": gcs_uri,
-                "local_path": final_mp3,
-                "completed_at": time.time(),
-                "duration_seconds": total_duration,
-            },
-        )
+        completed_data: dict = {
+            "status": "completed",
+            "gcs_uri": gcs_uri,
+            "local_path": final_mp3,
+            "completed_at": time.time(),
+            "duration_seconds": total_duration,
+        }
+        if mastering_used_fallback:
+            completed_data["mastering_warning"] = "Audio mastering failed; raw export used"
+        if gcs_upload_failed:
+            completed_data["gcs_upload_warning"] = "GCS upload failed; audio available locally only"
+        await job_store.update(job_id, completed_data)
 
         logger.info(
             f"[{job_id}] ✓ Job completed in {total_duration:.1f}s "
@@ -293,6 +303,28 @@ async def run_tts_job(
 
         # Step 9: Notify webhook
         await notify_job_completed(job_id, gcs_uri)
+
+    except (SynthesisError, StorageError, AudioProcessingError, GCSUploadError) as exc:
+        duration = time.time() - start_time
+        logger.error(f"[{job_id}] ✗ Job failed due to specific domain error after {duration:.1f}s: {exc}")
+        
+        _cleanup_failed_job(job_dir, final_mp3, job_id)
+        _cleanup_temp_files(normalized_temp_files, job_id)
+        _cleanup_intermediate(raw_wav, job_id)
+
+        error_name = exc.__class__.__name__
+        error_msg = str(exc)[:450]
+        
+        await job_store.update(
+            job_id,
+            {
+                "status": "failed",
+                "error": f"{error_name}: {error_msg}",
+                "completed_at": time.time(),
+                "duration_seconds": duration,
+            },
+        )
+        await notify_job_failed(job_id, f"{error_name}: {error_msg}")
 
     except Exception as exc:
         duration = time.time() - start_time
@@ -307,17 +339,15 @@ async def run_tts_job(
             _cleanup_failed_job(job_dir, final_mp3, job_id)
             _cleanup_temp_files(normalized_temp_files, job_id)
             _cleanup_intermediate(raw_wav, job_id)
-            _cleanup_intermediate(raw_mp3, job_id)
             return
 
         # Cleanup on failure
         _cleanup_failed_job(job_dir, final_mp3, job_id)
         _cleanup_temp_files(normalized_temp_files, job_id)
         _cleanup_intermediate(raw_wav, job_id)
-        _cleanup_intermediate(raw_mp3, job_id)
 
         # Update job status to failed
-        error_message = str(exc)[:500]  # Truncate long error messages
+        error_message = str(exc)[:450]  # Truncate long error messages
         await job_store.update(
             job_id,
             {

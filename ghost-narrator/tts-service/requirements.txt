@@ -40,7 +40,6 @@ gradio-client==1.4.0
 # ── Core TTS Engine (Studio Quality) ──────────────────────────────────────────
 # Fish Speech v1.5 for high-fidelity zero-shot voice cloning
 fish-speech @ git+https://github.com/fishaudio/fish-speech.git@v1.5.0
-openai-whisper>=20231117
 
 # ── API Framework ──────────────────────────────────────────────────────────────
 fastapi==0.111.0
@@ -84,6 +83,8 @@ sniffio>=1.0.0
 redis==5.0.1
 
 # ── Utilities ──────────────────────────────────────────────────────────────────
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
 python-multipart==0.0.9
 typing-extensions==4.11.0
 rich>=13.5.3

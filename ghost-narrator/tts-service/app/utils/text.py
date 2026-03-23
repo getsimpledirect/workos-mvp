@@ -8,8 +8,11 @@ determining context-aware pause durations between chunks.
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Final
+
+logger = logging.getLogger(__name__)
 
 # Default maximum words per chunk (40-60 words = 8-12 second audio segments)
 DEFAULT_MAX_CHUNK_WORDS: Final[int] = 200
@@ -103,10 +106,16 @@ def split_into_chunks(text: str, max_words: int = DEFAULT_MAX_CHUNK_WORDS) -> li
             chunks.append(' '.join(current_chunk_words))
 
     # Filter empty or trivially short chunks
-    chunks = [c.strip() for c in chunks if c.strip() and len(c.split()) >= 3]
+    chunks = [c.strip() for c in chunks if c.strip()]
 
-    # Fallback: if no chunks were created but we have text, return the whole text
-    return chunks if chunks else [text.strip()]
+    if not chunks:
+        # All content was filtered — return full text as one chunk and warn
+        logger.warning(
+            f"Text chunking produced no valid chunks for {len(text)}-char input; "
+            "returning as single chunk (may exceed max_words limit)"
+        )
+        return [text.strip()]
+    return chunks
 
 
 def get_pause_ms_after_chunk(chunk: str, next_chunk: str | None) -> int:

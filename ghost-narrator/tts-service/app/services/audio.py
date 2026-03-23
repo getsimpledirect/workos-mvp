@@ -277,10 +277,10 @@ def validate_wav_files(wav_paths: list[str]) -> None:
 
 def concatenate_wavs(
     wav_paths: list[str],
-    output_mp3: str,
+    output_path: str,
     chunk_texts: list[str] | None = None,
-        bitrate: str = DEFAULT_BITRATE,
-    ) -> str:
+    bitrate: str = DEFAULT_BITRATE,
+) -> str:
     """
     Join all chunk WAVs into a single file with context-aware pauses.
 
@@ -338,8 +338,8 @@ def concatenate_wavs(
     except AudioProcessingError:
         raise
     except Exception as exc:
-        if output_path.exists():
-            output_path.unlink(missing_ok=True)
+        if out_path.exists():
+            out_path.unlink(missing_ok=True)
         raise AudioProcessingError(
             "WAV concatenation failed",
             details=str(exc),
@@ -401,7 +401,8 @@ def concatenate_wavs_streaming(
             # If combined duration exceeds threshold, flush to disk
             if len(combined) > threshold_ms:
                 # Always flush to WAV for temporary files to maintain quality
-                temp_path = f"{output_path}.temp.{int(time.time())}.wav"
+                fd, temp_path = tempfile.mkstemp(suffix=".wav", dir=Path(output_path).parent)
+                os.close(fd)
                 combined.export(temp_path, format="wav")
                 combined = AudioSegment.from_wav(temp_path)
                 os.remove(temp_path)
@@ -425,8 +426,8 @@ def concatenate_wavs_streaming(
         # Cleanup on failure
         if temp_path and Path(temp_path).exists():
             Path(temp_path).unlink(missing_ok=True)
-        if output_path.exists():
-            output_path.unlink(missing_ok=True)
+        if out_path.exists():
+            out_path.unlink(missing_ok=True)
         raise AudioProcessingError(
             "Streaming WAV concatenation failed",
             details=str(exc),

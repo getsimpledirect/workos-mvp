@@ -8,14 +8,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import shutil
+from pathlib import Path
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 
 from fastapi import FastAPI
 
 from app import __version__
 from app.api.routes import health, tts
-from app.config import GCS_BUCKET_NAME, MAX_WORKERS, REDIS_URL
+from app.config import GCS_BUCKET_NAME, MAX_WORKERS, REDIS_URL, OUTPUT_DIR
 from app.core.tts_engine import initialize_tts_engine
 from app.services.job_store import get_job_store, initialize_job_store
 from app.services.notification import close_http_client, initialize_http_client
@@ -27,6 +30,11 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
 )
 logger = logging.getLogger("tts-service")
+
+# Module-level reference to the background model loader task.
+# Stored here to prevent it from being garbage collected and to allow
+# cancellation on shutdown.
+_model_loader_task: Optional[asyncio.Task] = None
 
 
 TAGS_METADATA = [
@@ -69,10 +77,30 @@ async def _background_model_loader():
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan manager for startup and shutdown."""
+    global _model_loader_task
+
     logger.info("Starting TTS service...")
 
-    # Start model loading in the background so the API comes up immediately
-    asyncio.create_task(_background_model_loader())
+    # Start model loading in the background so the API comes up immediately.
+    # Store the task reference to prevent GC and to allow cancellation on shutdown.
+    _model_loader_task = asyncio.create_task(_background_model_loader())
+
+    # Cleanup orphaned files from previous crashed runs
+    try:
+        if OUTPUT_DIR.exists():
+            for item in OUTPUT_DIR.iterdir():
+                try:
+                    if item.is_dir():
+                        shutil.rmtree(item)
+                    else:
+                        item.unlink()
+                except Exception as e:
+                    logger.warning(f"Failed to cleanup orphaned file {item}: {e}")
+        else:
+            OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        logger.info("Cleaned up orphaned files in output directory")
+    except Exception as exc:
+        logger.warning(f"Output directory cleanup failed: {exc}")
 
     try:
         await initialize_job_store(REDIS_URL)
@@ -106,6 +134,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     yield
 
     logger.info("Shutting down TTS service...")
+
+    # Cancel background model loader if still running
+    if _model_loader_task and not _model_loader_task.done():
+        _model_loader_task.cancel()
+        try:
+            await _model_loader_task
+        except asyncio.CancelledError:
+            logger.info("Background model loader task cancelled")
 
     try:
         job_store = get_job_store()

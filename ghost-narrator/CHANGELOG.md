@@ -9,6 +9,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Audio Backfill Scripts (2026-03-19)
+
+New utility scripts for generating audio on existing Ghost posts that were published before the pipeline was set up.
+
+**`scripts/backfill-audio.sh`** (Linux / macOS):
+- Prompts for n8n webhook URL, Ghost site URLs + Content API keys, delay between jobs, and dry-run mode
+- Paginates the Ghost Content API to retrieve all published posts
+- Filters posts where HTML does not contain an `<audio>` element
+- Sends each post sequentially to the n8n pipeline with a configurable delay (default: 300 s) to avoid overloading the TTS service
+- Supports multiple Ghost sites in a single run
+- Requires `curl` and `jq`
+
+**`scripts/backfill-audio.ps1`** (Windows — native PowerShell):
+- Identical functionality implemented in PowerShell 5.1+ compatible syntax
+- Uses `Invoke-RestMethod` for Ghost Content API and `Invoke-WebRequest` for webhook trigger
+- No external dependencies beyond built-in PowerShell cmdlets
+
+---
+
+### Fixed — TTS Service Hardening & Production Readiness (2026-03-19)
+
+Comprehensive bug fixes across the entire TTS service codebase.
+
+**Core fixes:**
+- `config.py`: Wrapped all `int(os.environ.get(...))` calls in `try/except ValueError` so invalid env vars (e.g. `MAX_WORKERS=auto`) no longer crash the service at import time
+- `main.py`: Stored `asyncio.create_task()` reference in a module-level variable to prevent premature garbage collection; cancel the task cleanly on shutdown
+- `job_store.py`: Removed permanent `self.use_redis = False` on transient Redis errors — the service now falls back gracefully per-operation without permanently disabling Redis
+- `tts_job.py`: Added `gcs_upload_failed` flag so GCS failures are non-fatal and reflected in job metadata (`gcs_upload_warning`); standardised error truncation to 450 chars
+- `synthesis.py`: Added `await asyncio.gather(*tasks, return_exceptions=True)` after parallel task cancellation to prevent resource leaks
+- `storage.py`: Added exponential-backoff retry loop (up to `MAX_RETRIES` attempts, capped at 30 s) for GCS uploads
+- `tts.py`: Removed dead `TYPE_CHECKING` import block
+
+**Tests:**
+- Added `pytest.ini` with `asyncio_mode = auto`
+- Added three new test cases: synthesis failure, GCS failure with non-fatal completion, and missing executor
+
+**Scripts:**
+- `run-docker.sh` / `run-docker.ps1`: Added `MAX_WORKERS` env var passthrough
+
+**Docs:**
+- `docs/ARCHITECTURE.md`: Fixed orphaned Python code fragment in "Test Voice Cloning" section; fixed duplicate `## Component Deep Dive` heading; updated directory structure listing
+- `scripts/validate-build.sh`: Extended startup health-check timeout from 60 s → 300 s to accommodate Fish Speech model downloads
+- `tts-service/README.md`: Corrected Code Style section (ESLint/Prettier → PEP 8/ruff)
+
+---
+
 ### Fixed - Fish Speech v1.5 Implementation (2024-01-16)
 
 **Problem:**

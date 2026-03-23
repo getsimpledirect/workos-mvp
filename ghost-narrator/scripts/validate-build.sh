@@ -80,8 +80,7 @@ PACKAGES=(
     "redis:Redis"
     "librosa:Librosa"
     "soundfile:SoundFile"
-    "pydub:Pydub"
-    "whisper:OpenAI Whisper"
+    "faster_whisper:Faster Whisper"
 )
 
 IMPORT_FAILED=false
@@ -213,9 +212,9 @@ if docker run -d --name "${CONTAINER_NAME}" \
 
     success "Container started successfully"
 
-    # Wait for service to be ready
-    info "Waiting for service to start (max 60 seconds)..."
-    TIMEOUT=60
+    # Wait for service to be ready (model loading can take 3-5 min on first run)
+    info "Waiting for service to start (max 300 seconds - model loading included)..."
+    TIMEOUT=300
     ELAPSED=0
     READY=false
 
@@ -233,8 +232,8 @@ exit(1)
             READY=true
             break
         fi
-        sleep 2
-        ELAPSED=$((ELAPSED + 2))
+        sleep 5
+        ELAPSED=$((ELAPSED + 5))
         echo -n "."
     done
     echo ""
@@ -242,7 +241,7 @@ exit(1)
     if [ "$READY" = true ]; then
         success "Service responded to health check in ${ELAPSED}s"
     else
-        warning "Service did not respond to health check within ${TIMEOUT}s (may need more time for first startup)"
+        warning "Service did not respond within ${TIMEOUT}s — this is normal on first run while Fish Speech models download (~4GB)"
     fi
 else
     error "Failed to start test container"

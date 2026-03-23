@@ -9,16 +9,18 @@
 1. [What This Pipeline Does](#what-this-pipeline-does)
 2. [Architecture Overview](#architecture-overview)
 3. [Build & Deployment](#build--deployment)
-4. [Component Deep Dive](#component-deep-dive)
-5. [VRAM Budget & Resource Planning](#vram-budget--resource-planning)
-6. [Directory Structure](#directory-structure)
-7. [Step-by-Step Setup](#step-by-step-setup)
-8. [n8n Workflow — Node-by-Node Explanation](#n8n-workflow--node-by-node-explanation)
-9. [Ghost Webhook Configuration](#ghost-webhook-configuration)
-10. [Voice Clone Preparation](#voice-clone-preparation)
-11. [GCS Bucket & IAM Setup](#gcs-bucket--iam-setup)
-12. [Testing & Troubleshooting](#testing--troubleshooting)
-13. [Cost Analysis](#cost-analysis)
+4. [TTS Service Overview](#tts-service-overview)
+5. [Component Deep Dive](#component-deep-dive)
+6. [VRAM Budget & Resource Planning](#vram-budget--resource-planning)
+7. [Directory Structure](#directory-structure)
+8. [Step-by-Step Setup](#step-by-step-setup)
+9. [n8n Workflow — Node-by-Node Explanation](#n8n-workflow--node-by-node-explanation)
+10. [Ghost Webhook Configuration](#ghost-webhook-configuration)
+11. [Voice Clone Preparation](#voice-clone-preparation)
+12. [GCS Bucket & IAM Setup](#gcs-bucket--iam-setup)
+13. [Testing & Troubleshooting](#testing--troubleshooting)
+14. [Backfilling Audio for Existing Posts](#backfilling-audio-for-existing-posts)
+15. [Cost Analysis](#cost-analysis)
 
 ---
 
@@ -105,21 +107,14 @@ Every time you publish a post on either of your Ghost websites, this pipeline au
 
 ### TTS Service Build Architecture
 
-The TTS service uses a **20-stage Dockerfile** to prevent dependency resolution errors. This approach was specifically designed to solve the `resolution-too-deep` error that occurs when pip tries to resolve 50+ packages with complex version constraints simultaneously.
+The TTS service uses a **modern uv-based Dockerfile** for deterministic and lightning-fast dependency resolution, eliminating the legacy `resolution-too-deep` errors that often plagued PyTorch + Transformers environments.
 
 **Build Strategy:**
-- Each stage installs 3-10 compatible packages in dependency order
-- Packages are grouped by their dependency relationships
-- Each stage verifies installation and cleans up temporary files
-- Total build time: 15-25 minutes (first build), 1-3 minutes (cached)
-
-**Stage Breakdown:**
-1. **Stages 1-2**: Build tools, numpy, scipy (foundation)
-2. **Stages 3-4**: PyTorch ecosystem, Lightning framework
-3. **Stages 5-6**: Transformers, Gradio (pinned to avoid backtracking)
-4. **Stages 7-9**: Audio processing (librosa, soundfile), FastAPI
-5. **Stages 10-19**: Supporting libraries (GCS, Redis, Hydra, speech tools)
-6. **Stage 20**: Fish Speech v1.5 (uses all pre-installed dependencies)
+- Utilizes `uv` for rust-based, parallel dependency resolution and installation.
+- Eliminates legacy O(n!) pip resolution timeouts.
+- Pre-downloads Fish Speech and Whisper weights during the image build for faster cold starts.
+- Integrates comprehensive health checks validating critical library imports (PyTorch, librosa).
+- Total build time: 2-5 minutes (first build), <30 seconds (cached)
 
 ### Resource Requirements
 
@@ -127,7 +122,7 @@ The TTS service uses a **20-stage Dockerfile** to prevent dependency resolution 
 - **RAM**: 8GB allocated to Docker Desktop
 - **Disk Space**: 20GB free (includes base images, layers, models)
 - **Network**: Stable connection (~7GB download for models + packages)
-- **Time**: 15-25 minutes first build, model download can add 5-10 minutes
+- **Time**: 2-5 minutes first build, model download can add 2-3 minutes
 
 **Runtime Resources (per docker-compose.yml):**
 - **CPU Mode (Recommended)**: 1GB RAM, 4 CPU cores per worker
@@ -177,7 +172,7 @@ error: resolution-too-deep
 
 **Solution:** Already fixed in Dockerfile. If you still see this:
 - Use `--no-cache` flag: `docker compose build --no-cache tts-service`
-- Ensure you're using the latest Dockerfile (20-stage build)
+- Ensure you're using the latest Dockerfile (uv-based build)
 - Verify 8GB+ RAM allocated to Docker
 
 #### 2. Out of Memory (Build Killed)
@@ -311,16 +306,14 @@ curl http://localhost:8020/health
 
 Expected response:
 ```json
-{"status": "healthy", "service": "tts-service", "version": "1.0.0"}
+{"status": "healthy", "device": "cpu", "model": "fish-speech-1.5", "voice_sample": true, "model_loaded": true, "job_store": "redis", "jobs_count": 0, "max_workers": 4}
 ```
 
 ---
 
-## Component Deep Dive
+## TTS Service Overview
 
-### TTS Service (Fish Speech v1.5)
-
-**Technology Stack:**
+### Technology Stack
 - **Engine**: Fish Speech v1.5 (state-of-the-art zero-shot TTS)
 - **Framework**: FastAPI + Uvicorn
 - **Audio Processing**: librosa, soundfile, pydub, pytorch
@@ -332,15 +325,12 @@ Expected response:
 - **Audio Mastering**: LUFS normalization (-23 LUFS per chunk, -16 LUFS final output)
 
 **Key Features:**
-│  └──────────────────────┘       └──────────────────────┘                │
-│                                                                           │
-│  ┌──────────────────────────────────────────────────────────────┐       │
-│  │  Google Cloud Storage Bucket                                  │       │
-│  │  gs://your-audio-bucket/podcasts/{site}/{year}/{month}/{slug}.mp3    │
-│  │  Public CDN URL: https://storage.googleapis.com/...           │       │
-│  └──────────────────────────────────────────────────────────────┘       │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+- Zero-shot voice cloning from a single reference audio file
+- Async background job processing with Redis-backed status tracking
+- Automatic fallback to in-memory storage if Redis is unavailable
+- Parallel synthesis on CPU (configurable worker count)
+- Professional audio mastering (EBU R128 loudness normalization)
+- Exponential-backoff retry on GCS uploads and n8n callbacks
 
 ---
 
@@ -354,7 +344,7 @@ Expected response:
 - **Built-in Google Cloud Storage node** — no custom code to upload files
 - **Visual workflow editor** — debug, replay, and modify without touching code
 - **Execution history** — see exactly what happened for every article processed
-- Runs as a lightweight Docker container (~200MB RAM)
+- Runs as a Docker container (2 GB RAM limit, ~200–800 MB typical usage)
 - Free, open-source, self-hosted
 
 **How it works in this pipeline:** n8n acts as the "traffic controller." It receives the webhook from Ghost, calls your vLLM API (using an HTTP Request node), calls the TTS service, and then uploads to GCS using its built-in GCS node — all wired together visually.
@@ -473,7 +463,7 @@ The TTS service implements a sophisticated multi-stage pipeline:
 - Split text into chunks at sentence boundaries (MAX_CHUNK_WORDS=200)
 - Preserves context and flow between chunks
 
-**Stage 2: Parallel/Squential Synthesis**
+**Stage 2: Parallel/Sequential Synthesis**
 - **CPU Mode**: Parallel synthesis using ThreadPoolExecutor (MAX_WORKERS=4 default)
 - **GPU Mode**: Sequential synthesis (optimal for CUDA memory management)
 - Each chunk synthesized independently using Fish Speech v1.5
@@ -514,7 +504,7 @@ This is the most critical concern. Here's the breakdown:
 | Qwen3-14B (AWQ 4-bit) | ~7–8 GB | ~2 GB | Already running in your vLLM setup |
 | Fish Speech v1.5 (GPU mode) | ~2–3 GB | ~6 GB | CLI-based inference with DAC + text2semantic |
 | Redis | 0 GB VRAM | ~50 MB | Persistent job storage |
-| n8n | 0 GB VRAM | ~200 MB | Workflow orchestration |
+| n8n | 0 GB VRAM | up to 2 GB | Workflow orchestration (2 GB container limit) |
 | **Total (GPU mode)** | **~10–11 GB** | **~8.3 GB** | Fits in L4 with headroom |
 | Fish Speech v1.5 (CPU mode) | 0 GB VRAM | ~1 GB | **Recommended - parallel synthesis** |
 | **Total (CPU mode)** | **~8 GB VRAM** | **~2.3 GB** | **vLLM on GPU, TTS on CPU - optimal** |
@@ -571,11 +561,14 @@ ghost-narrator/
 │
 ├── scripts/
 │   ├── init.sh                    # Production initialization script
-│   └── setup-gcp.sh               # GCP resources setup (bucket, IAM, SA)
+│   ├── setup-gcp.sh               # GCP resources setup (bucket, IAM, SA)
+│   ├── validate-build.sh          # Docker image validation and smoke tests
+│   ├── backfill-audio.sh          # Backfill audio for existing posts (Linux/macOS)
+│   └── backfill-audio.ps1         # Backfill audio for existing posts (Windows)
 │
 └── tts-service/
     ├── .dockerignore
-    ├── Dockerfile                 # 20-stage build for dependency management
+    ├── Dockerfile                 # uv-based fast build for dependency management
     ├── QUICKSTART.md              # Quick start guide
     ├── README.md                  # TTS service documentation
     ├── requirements.txt           # Python dependencies
@@ -786,7 +779,7 @@ Rules:
 
 **Why "Output ONLY the narration text"?** Without this, the LLM often adds things like "Here's the narration:" or "Sure, here is the script:" at the start, which would get read aloud in the audio. We strip that with the instruction.
 
-**Timeout is set to 120,000ms (2 min)** — Qwen3-14B can take ~30–90 seconds for a long article rewrite.
+**Timeout is set to 300,000ms (5 min)** — Qwen3-14B can take ~30–90 seconds for a short article and up to 4–5 minutes for a long one when generating a full-length narration script.
 
 **Configuration:** The vLLM URL is passed via environment variable `VLLM_BASE_URL` (default: `http://host.docker.internal:8001/v1`) allowing easy switching between local and remote vLLM instances.
 
@@ -921,11 +914,6 @@ curl http://localhost:8020/tts/status/test-voice-clone
 
 # Download the audio:
 curl -o test-voice.mp3 http://localhost:8020/tts/download/test-voice-clone
-import sys, json
-data = json.load(sys.stdin)
-print('File ready at:', data['download_url'])
-print('Duration:', data['duration_estimate_seconds'], 'seconds')
-"
 ```
 
 ---
@@ -1075,6 +1063,114 @@ In n8n UI, open the workflow → click **"Test Workflow"** → manually trigger 
 - Reduce `MAX_WORKERS` if using many parallel workers
 - Streaming concatenation automatically activates for large files (>10 chunks)
 - Monitor memory usage: `docker stats tts-service`
+
+---
+
+## Backfilling Audio for Existing Posts
+
+The Ghost Narrator pipeline processes articles automatically when they are published. For posts that existed before the pipeline was set up, the `scripts/backfill-audio` scripts trigger the same n8n pipeline retroactively — working through your post archive one article at a time at a controlled pace.
+
+### When to Use This
+
+- You just deployed the pipeline and have a back-catalogue of published articles without audio
+- The pipeline was temporarily down and a batch of posts was published without being narrated
+- You want to regenerate audio for posts after a voice reference update
+
+### Prerequisites
+
+Before running the backfill:
+1. Services are running: `docker compose ps` should show `tts-service`, `redis`, and `n8n` all healthy
+2. The n8n workflow is active (toggle is green in the n8n UI)
+3. You have the **Content API key** for each Ghost site (read-only — found in Ghost Admin → Settings → Integrations)
+4. `curl` and `jq` are installed (Linux/macOS only): `sudo apt install curl jq`
+
+### Running the Script
+
+**Linux / macOS:**
+```bash
+cd ghost-narrator
+bash scripts/backfill-audio.sh
+```
+
+**Windows (PowerShell):**
+```powershell
+cd ghost-narrator
+.\scripts\backfill-audio.ps1
+```
+
+### Interactive Prompts
+
+The script walks you through configuration step by step:
+
+| Prompt | Default | Notes |
+|---|---|---|
+| n8n webhook URL | `http://34.130.76.88:5678/webhook/ghost-published` | Your VM's public IP — change if different |
+| Number of Ghost sites | `1` | Enter `2` to process both sites in one run |
+| Ghost URL | *(required)* | e.g. `https://ghost.founderreality.com` |
+| Content API key | *(required)* | From Ghost Admin → Integrations |
+| Delay between jobs (seconds) | `300` | See pacing guide below |
+| Dry run? | `N` | Enter `y` to preview without triggering |
+
+### Choosing the Right Delay
+
+The delay prevents the TTS service from being overloaded. Tune it based on your typical article length:
+
+| Article length | Recommended delay |
+|---|---|
+| ~1,000 words | 180 s (3 min) |
+| ~2,000 words | 300 s (5 min) — default |
+| ~4,000 words | 600 s (10 min) |
+
+If you exceed the TTS service capacity, jobs will queue in Redis and process in order — but a shorter delay risks the service accumulating a growing backlog. When in doubt, use the default 300 s.
+
+### What Happens During Execution
+
+1. All published posts are fetched from the Ghost Content API (paginated, all pages)
+2. Posts are split into two groups:
+   - **Already has audio** (`<audio>` tag present in HTML) → skipped automatically
+   - **Needs audio** → queued for narration
+3. The full list of posts to be processed is shown with the estimated total time
+4. After confirmation, each post is submitted to the n8n pipeline as a webhook payload matching the format Ghost itself sends on publish
+5. A live countdown is shown between jobs
+6. A summary of triggered / skipped / errored jobs is printed at the end
+
+### Monitoring Progress
+
+While the script runs, monitor the pipeline in parallel:
+
+```bash
+# n8n workflow executions
+open http://34.130.76.88:5678
+
+# TTS job status
+curl http://34.130.76.88:8020/health
+
+# Live TTS logs
+docker logs -f tts-service
+
+# Live n8n logs
+docker logs -f n8n
+```
+
+### Resuming After Interruption
+
+The script is safe to re-run at any time. Posts that already have an `<audio>` element embedded are automatically detected and skipped, so you will never double-process an article. If the script was interrupted mid-run, simply execute it again with the same parameters — it will pick up from where it left off.
+
+### Dry Run
+
+Use dry-run mode to audit which posts need audio before committing to a full backfill:
+
+```bash
+# Linux/macOS
+bash scripts/backfill-audio.sh
+# → Answer "y" at the dry run prompt
+
+# PowerShell
+.\scripts\backfill-audio.ps1
+# → Answer "y" at the dry run prompt
+```
+
+The script will list every post that needs audio along with the estimated processing time, then exit without triggering anything.
 
 ---
 
