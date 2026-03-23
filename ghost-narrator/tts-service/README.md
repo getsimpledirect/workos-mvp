@@ -194,7 +194,7 @@ MAX_CHUNK_WORDS=200
 DEVICE=cpu
 GCS_BUCKET_NAME=your-bucket-name
 GCS_AUDIO_PREFIX=audio/articles
-N8N_CALLBACK_URL=http://localhost:5678/webhook/tts-complete
+N8N_CALLBACK_URL=http://localhost:5678/webhook/tts-callback
 ```
 
 ## Architecture
@@ -268,9 +268,35 @@ Response:
 {
   "status": "healthy",
   "device": "cpu",
-  "voice_sample_exists": true,
-  "model_loaded": true
+  "model": "fish-speech-1.5",
+  "voice_sample": true,
+  "model_loaded": true,
+  "reference_audio_present": true,
+  "reference_tokens_present": true,
+  "tts_engine_ready": true,
+  "job_store": "redis",
+  "jobs_count": 0,
+  "max_workers": 4,
+  "executor_active": true,
+  "gcs_client_active": true
 }
+```
+
+### Additional Health Endpoints
+
+```bash
+GET /health/ready    # Kubernetes readiness probe — returns {"ready": true} when engine is fully initialized
+GET /health/live     # Kubernetes liveness probe — returns {"alive": true} if service is responsive
+GET /health/detailed # Component-level breakdown for debugging
+```
+
+### Job Management
+
+```bash
+POST /tts/pause/{job_id}    # Pause an active job
+POST /tts/resume/{job_id}   # Resume a paused job
+DELETE /tts/{job_id}        # Delete a job and clean up its files
+GET /tts/jobs               # List all jobs
 ```
 
 ## Voice Sample Requirements
@@ -342,7 +368,7 @@ MAX_WORKERS=16
 #### GPU Mode (CUDA)
 - Requires NVIDIA GPU with 4+ GB VRAM
 - Generation time: ~20-40 seconds per 2000-word article
-- Memory: ~3 GB VRAM + 2 GB RAM
+- Memory: ~3 GB VRAM + 6 GB RAM
 - **VRAM Harmony**: Works alongside vLLM. Optimized for NVIDIA L4 (24GB).
 - **GPU Rebalancing**: If using vLLM, ensure `gpu_memory_utilization` is set to `0.7` to provide headroom for the Studio TTS models.
 
@@ -411,9 +437,14 @@ The `/health` endpoint shows storage status:
   "model": "fish-speech-1.5",
   "voice_sample": true,
   "model_loaded": true,
+  "reference_audio_present": true,
+  "reference_tokens_present": true,
+  "tts_engine_ready": true,
   "job_store": "redis",
   "jobs_count": 5,
-  "max_workers": 4
+  "max_workers": 4,
+  "executor_active": true,
+  "gcs_client_active": true
 }
 ```
 
