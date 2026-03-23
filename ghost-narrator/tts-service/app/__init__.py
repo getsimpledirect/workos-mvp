@@ -4,4 +4,4 @@ Voice-Cloning Text-to-Speech REST API.
 Built on Fish Speech v1.5 + FastAPI.
 """
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
