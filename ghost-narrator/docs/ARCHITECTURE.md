@@ -52,17 +52,17 @@ Every time you publish a post on either of your Ghost websites, this pipeline au
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                     GCP Compute Engine (L4 GPU VM)                       │
-│                     4 vCPUs · 16GB RAM · 16GB VRAM · 200GB SSD          │
+│                     4 vCPUs · 16GB RAM · 16GB VRAM · 300GB SSD          │
 │                                                                           │
 │  ┌─────────────────────────────────────────────────────────────────┐    │
 │  │                        Docker Network                             │    │
 │  │                                                                   │    │
 │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐   │    │
 │  │  │   Open WebUI │  │   vLLM API   │  │   TTS Service        │   │    │
-│  │  │  (existing)  │  │  Qwen3-14B   │  │   Fish Speech v1.5   │   │    │
-│  │  │   :3000      │  │  :8001       │  │   :8020              │   │    │
-│  │  │              │  │  ~8GB VRAM   │  │   CPU: ~1GB RAM      │   │    │
-│  │  │              │  │              │  │   GPU: ~3GB VRAM     │   │    │
+│  │  │  (with Web   │  │  Qwen3-14B   │  │   Fish Speech v1.5   │   │    │
+│  │  │   Search via │  │  :8001       │  │   :8020              │   │    │
+│  │  │   SearXNG)   │  │  ~8GB VRAM   │  │   CPU: ~1GB RAM      │   │    │
+│  │  │   :3000      │  │              │  │   GPU: ~3GB VRAM     │   │    │
 │  │  └──────────────┘  └──────────────┘  └──────────────────────┘   │    │
 │  │                                                                   │    │
 │  │  ┌──────────────┐  ┌──────────────┐                             │    │

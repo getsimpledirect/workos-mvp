@@ -74,6 +74,7 @@ services:
       - ./searxng/limiter.toml:/etc/searxng/limiter.toml:ro
     environment:
       - SEARXNG_BASE_URL=http://localhost:8888
+      - SEARXNG_SECRET=${SEARXNG_SECRET} # Injected from VM environment / GCP Secret Manager
     restart: unless-stopped
     logging:
       driver: json-file

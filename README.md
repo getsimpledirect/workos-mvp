@@ -117,9 +117,12 @@ cd workos-mvp
 
 ### 2. Start Core AI Services
 
+We use a helper script to automatically retrieve credentials from GCP Secret Manager and boot the stack:
+
 ```bash
-# Start ChromaDB, vLLM, and Open WebUI
-docker compose up -d
+# Start ChromaDB, vLLM, SearXNG, and Open WebUI
+chmod +x start-core.sh
+./start-core.sh
 
 # Check service health
 docker compose ps
@@ -259,6 +262,7 @@ Create a `.env` file in the appropriate directory:
 
 ```env
 WEBUI_URL=http://localhost:3000
+SEARXNG_SECRET=your-static-secret-here # Only needed if not using start-core.sh and GCP Secret Manager
 ```
 
 **ghost-narrator/ (Audio Pipeline):**
@@ -294,11 +298,11 @@ TIMEZONE=UTC
 
 ```bash
 # Core AI services
-docker compose up -d
+./start-core.sh
 
 # Ghost Narrator pipeline
 cd ghost-narrator
-docker compose up -d
+./scripts/init.sh
 ```
 
 ### Stopping Services

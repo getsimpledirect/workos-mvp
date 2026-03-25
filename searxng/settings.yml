@@ -16,7 +16,7 @@ search:
     - json
 
 server:
-  secret_key: "workos-searxng-secret-change-me"
+  # Secret key is injected securely via docker-compose environment variable SEARXNG_SECRET
   limiter: false
   image_proxy: false
   port: 8080
