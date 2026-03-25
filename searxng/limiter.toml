@@ -1,0 +1,6 @@
+# SearXNG Rate Limiter Configuration
+# Disabled — this instance is internal-only, not exposed to the public internet.
+# See: https://docs.searxng.org/admin/searx.limiter.html
+
+[botdetection.ip_limit]
+link_token = false

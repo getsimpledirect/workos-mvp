@@ -43,11 +43,11 @@ WorkOS MVP is a comprehensive AI infrastructure stack designed for self-hosted, 
 │  ┌─────────────────────────────────────────────────────────────────────┐ │
 │  │                     Core AI Services (docker-compose.yml)            │ │
 │  │                                                                       │ │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐       │ │
-│  │  │   ChromaDB   │  │   vLLM API   │  │     Open WebUI       │       │ │
-│  │  │   Vector DB  │  │  Qwen3-14B   │  │    Chat Interface    │       │ │
-│  │  │   :8000      │  │  :8001       │  │    :3000             │       │ │
-│  │  └──────────────┘  └──────────────┘  └──────────────────────┘       │ │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐ │
+│  │  │   ChromaDB   │  │   vLLM API   │  │   SearXNG    │  │  Open WebUI  │ │
+│  │  │   Vector DB  │  │  Qwen3-14B   │  │  Web Search  │  │  Interface   │ │
+│  │  │   :8000      │  │  :8001       │  │  :8888       │  │  :3000       │ │
+│  │  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘ │
 │  └─────────────────────────────────────────────────────────────────────┘ │
 │                                                                           │
 │  ┌─────────────────────────────────────────────────────────────────────┐ │
@@ -72,6 +72,7 @@ WorkOS MVP is a comprehensive AI infrastructure stack designed for self-hosted, 
 |---------|------|-------------|
 | **ChromaDB** | 8000 | Vector database for embeddings and semantic search |
 | **vLLM (Qwen3-14B)** | 8001 | High-performance LLM inference with OpenAI-compatible API |
+| **SearXNG** | 8888 | Locally hosted metasearch engine for live web knowledge |
 | **Open WebUI** | 3000 | Modern chat interface for interacting with local models |
 
 ### Ghost Narrator Pipeline (`ghost-narrator/`)
@@ -90,7 +91,7 @@ WorkOS MVP is a comprehensive AI infrastructure stack designed for self-hosted, 
 
 - **GPU**: NVIDIA GPU with 16GB+ VRAM (L4, RTX 4090, or equivalent)
 - **RAM**: 16GB minimum, 32GB recommended
-- **Storage**: 200GB+ SSD for models and data
+- **Storage**: 300GB+ SSD for models and data
 
 ### Software Requirements
 
@@ -181,6 +182,7 @@ Modern chat interface connected to your local vLLM instance.
 - Access at http://localhost:3000
 - First user registration creates admin account
 - Supports multiple conversations, file uploads, and RAG
+- **Web Search**: Integrated with local SearXNG instance. Click the `+` button or search icon in chat to enable real-time web search for the LLM.
 
 ---
 

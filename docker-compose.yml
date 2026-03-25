@@ -10,6 +10,11 @@ services:
       - IS_PERSISTENT=TRUE
       - ANONYMIZED_TELEMETRY=FALSE
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     healthcheck:
       test: ["CMD-SHELL", "cat /proc/net/tcp | grep -q '1F40' || exit 1"]
       interval: 10s
@@ -49,9 +54,38 @@ services:
               count: 1
               capabilities: [gpu]
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "3"
     depends_on:
       chroma:
         condition: service_healthy
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    ports:
+      - "8888:8080"
+    volumes:
+      # Mount config files directly to avoid permissions issues when the container drops to 'searxng' user
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+      - ./searxng/limiter.toml:/etc/searxng/limiter.toml:ro
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8888
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
 
   open-webui:
     image: ghcr.io/open-webui/open-webui:main
@@ -72,10 +106,27 @@ services:
       - DEFAULT_USER_ROLE=pending
       - ENABLE_COMMUNITY_SHARING=false
       - WEBUI_URL=${WEBUI_URL:-http://localhost:3000}
+      # Web Search via SearXNG
+      - ENABLE_RAG_WEB_SEARCH=true
+      - RAG_WEB_SEARCH_ENGINE=searxng
+      - SEARXNG_QUERY_URL=http://searxng:8080/search?q=<query>&format=json
+      
+      # Advanced RAG & Search Optimizations
+      - RAG_WEB_SEARCH_RESULT_COUNT=8
+      - RAG_WEB_SEARCH_CONCURRENT_REQUESTS=10
+      - CHUNK_SIZE=1500
+      - CHUNK_OVERLAP=150
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     depends_on:
       chroma:
         condition: service_healthy
+      searxng:
+        condition: service_started
 
 volumes:
   chroma_data:
