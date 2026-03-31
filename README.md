@@ -428,21 +428,9 @@ workos-mvp/
 
 ## License
 
-This project uses a **dual licensing** approach:
+This project is licensed under the **MIT License**. See [LICENSE](LICENSE) for details.
 
-### Root Level: Apache 2.0
-The infrastructure composition (Docker configs, orchestration, core services) is licensed under **Apache 2.0**.
-
-### Ghost Narrator: MIT License
-The Ghost Narrator pipeline implementation (tts-service, n8n workflows, scripts) is **MIT Licensed**. See [ghost-narrator/LICENSE](ghost-narrator/LICENSE) for details.
-
-```
-workos-mvp/                  → Apache 2.0
-└── ghost-narrator/          → MIT
-    ├── tts-service/         → MIT
-    ├── n8n/workflows/       → MIT
-    └── scripts/             → MIT
-```
+> **Note:** The Fish Speech v1.5 model weights are licensed under **CC BY-NC-SA 4.0** by Fish Audio. This license applies to the model weights only, not to the Ghost Narrator source code. Commercial use of the model weights requires a separate license from Fish Audio. See [NOTICE](NOTICE) for details.
 
 ---
 
