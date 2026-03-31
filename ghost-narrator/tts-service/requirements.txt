@@ -108,7 +108,7 @@ antlr4-python3-runtime==4.9.*
 
 # ── Additional TTS Dependencies ───────────────────────────────────────────────
 scipy>=1.11.0
-inflect==7.0.0
+inflect==7.5.0
 huggingface-hub>=0.36.0
 anyascii==0.3.2
 gruut[de,es,fr]==2.2.3
