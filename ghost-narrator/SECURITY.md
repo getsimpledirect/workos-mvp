@@ -9,11 +9,11 @@ We currently support the following versions of Ghost Narrator:
 | Latest  | :white_check_mark: |
 | < 1.0   | :x:                |
 
-*The current release is v1.3.0 - see [releases](https://github.com/getsimpledirect/workos-mvp/releases) for details.*
+*The current release is v1.3.0 - see [releases](https://github.com/getsimpledirect/ghost-narrator/releases) for details.*
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability within Ghost Narrator, please report it via **GitHub Issues**: https://github.com/getsimpledirect/workos-mvp/issues
+If you discover a security vulnerability within Ghost Narrator, please report it via **GitHub Issues**: https://github.com/getsimpledirect/ghost-narrator/issues
 
 Please mark the issue as "Security" or email the maintainer directly if it's sensitive.
 

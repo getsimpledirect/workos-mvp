@@ -42,7 +42,7 @@ Ghost CMS (publish) → n8n (orchestrate) → LLM (rewrite for narration) → Fi
 
 Ghost Narrator lives in the `ghost-narrator/` directory. It needs three things:
 
-1. **A Ghost CMS site** — self-hosted or Ghost Pro
+1. **A [Ghost](https://ghost.org/) blog** — the open-source publishing platform ([GitHub](https://github.com/TryGhost/Ghost))
 2. **An LLM endpoint** — any OpenAI-compatible API (local or cloud)
 3. **A GPU** — for voice synthesis with Fish Speech v1.5
 
@@ -106,7 +106,7 @@ flowchart TD
 - Git
 
 **You also need:**
-- A [Ghost CMS](https://ghost.org/) site
+- A [Ghost](https://ghost.org/) blog ([open source](https://github.com/TryGhost/Ghost))
 - An OpenAI-compatible LLM endpoint (local or cloud)
 - A 30-60 second WAV recording of your voice (45+ seconds recommended)
 

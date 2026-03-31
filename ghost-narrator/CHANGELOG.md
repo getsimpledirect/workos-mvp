@@ -55,7 +55,7 @@ Comprehensive bug fixes across the entire TTS service codebase.
 
 ---
 
-### Fixed - Fish Speech v1.5 Implementation (2024-01-16)
+### Fixed - Fish Speech v1.5 Implementation (2025-01-16)
 
 **Problem:**
 - TTS service failing with `cannot import name 'LlamaForConditionalGeneration' from 'fish_speech.models.text2semantic.llama'`
@@ -109,7 +109,7 @@ curl http://localhost:8020/health
 
 ---
 
-### Fixed - Docker Build Dependency Resolution (2025-01-XX)
+### Fixed - Docker Build Dependency Resolution (2025-01)
 
 **Problem:**
 Docker build failing with `resolution-too-deep` error after 30+ minutes when pip tries to resolve 50+ packages simultaneously.
@@ -161,7 +161,5 @@ See `docs/ARCHITECTURE.md` for technical details.
 
 ---
 
-[Unreleased]: https://github.com/yourusername/ghost-narrator/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/yourusername/ghost-narrator/releases/tag/v1.0.0
-- Fish Speech v1.5 migration: switch from Coqui XTTS v2; tokens stored as `reference_vq_tokens.npy` in voices; DAC artifact `fake.npy`; cross-device-safe moves; updated docs.
-- Documentation updates: ARCHITECTURE.md, README, and CHANGELOG reflect new artifact names and paths; no reference to deleting the original reference audio.
+[Unreleased]: https://github.com/getsimpledirect/ghost-narrator/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/getsimpledirect/ghost-narrator/releases/tag/v1.0.0

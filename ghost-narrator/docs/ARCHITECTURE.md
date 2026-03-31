@@ -26,7 +26,7 @@
 
 ## What This Pipeline Does
 
-Every time you publish a post on either of your Ghost websites, this pipeline automatically:
+Every time you publish a post on your [Ghost](https://ghost.org/) website, this pipeline automatically:
 
 1. **Detects** the new article via a Ghost webhook
 2. **Fetches** the full article text using the Ghost Content API
@@ -857,7 +857,7 @@ Uses `PUT /ghost/api/admin/posts/{id}/` to update the live article on Ghost with
 
 ## Ghost Webhook Configuration
 
-For **each** of your 2 Ghost websites:
+For **each** of your Ghost websites:
 
 1. Go to **Ghost Admin** → **Settings** → **Integrations**
 2. Click **Add custom integration**
@@ -944,8 +944,8 @@ gcloud iam service-accounts keys create \
 
 ### Create Bucket
 ```bash
-# Create in asia-south1 (Mumbai — close to India, low latency)
-gsutil mb -p $PROJECT_ID -l asia-south1 gs://YOUR_BUCKET_NAME/
+# Create in northamerica-northeast2 (Toronto) — choose a region close to your users
+gsutil mb -p $PROJECT_ID -l northamerica-northeast2 gs://YOUR_BUCKET_NAME/
 
 # Make objects publicly readable
 gsutil iam ch allUsers:objectViewer gs://YOUR_BUCKET_NAME/
