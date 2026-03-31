@@ -13,7 +13,9 @@ We currently support the following versions of Ghost Narrator:
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability within Ghost Narrator, please open an issue at **https://github.com/getsimpledirect/workos-mvp/security** or email security@ayushnaik.com. All security vulnerabilities will be promptly addressed.
+If you discover a security vulnerability within Ghost Narrator, please report it via **GitHub Security Advisories**: https://github.com/getsimpledirect/workos-mvp/security/advisories
+
+This allows private reporting before public disclosure.
 
 Please include the following information:
 
