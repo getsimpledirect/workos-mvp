@@ -238,8 +238,8 @@ However, the **default TTS model matters**:
 
 **Qwen3-TTS (coming soon as new default)**
 - Licensed under [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0) — fully permissive, commercial use allowed
-- Repo: [https://huggingface.co/Qwen/Qwen3-TTS](https://huggingface.co/Qwen/Qwen3-TTS)
-- If you need commercial use now, you can swap to Qwen3-TTS yourself by updating the TTS service configuration to point to the Qwen3-TTS endpoint
+- Repo: [Qwen/Qwen3-TTS on Hugging Face](https://huggingface.co/Qwen/Qwen3-TTS)
+- **Can't wait?** If you need commercial use now, you can swap to Qwen3-TTS yourself by pointing the TTS service at the Qwen3-TTS endpoint. We're actively working on this integration — PRs welcome.
 
 **Target state:** MIT code + Apache 2.0 models = fully permissive end-to-end. No licensing asterisks.
 
