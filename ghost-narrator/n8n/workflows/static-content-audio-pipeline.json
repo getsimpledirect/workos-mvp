@@ -1,5 +1,8 @@
 {
   "name": "Static Content → Audio Pipeline",
+  "license": "MIT",
+  "licenseUrl": "https://opensource.org/licenses/MIT",
+  "author": "Ayush Naik",
   "nodes": [
     {
       "id": "webhook-static",

@@ -68,11 +68,11 @@ Go to **Settings → Variables** in the n8n UI and add them there. The workflows
 *   `VLLM_MODEL_NAME`: Model name (e.g., `Qwen/Qwen3-14B`).
 *   `TTS_SERVICE_URL`: URL to TTS service (e.g., `http://tts-service:8020`). *Pre-configured in docker-compose.yml.*
 
-**Ghost Site 1 (founderreality.com):**
+**Ghost Site 1:**
 *   `GHOST_KEY_SITE1`: **Content API Key** (read-only, used to fetch article text).
 *   `GHOST_SITE1_ADMIN_API_KEY`: **Admin API Key** (used to embed the audio player).
 
-**Ghost Site 2 (getsimpledirect.com):**
+**Ghost Site 2:**
 *   `GHOST_KEY_SITE2`: **Content API Key**.
 *   `GHOST_SITE2_ADMIN_API_KEY`: **Admin API Key**.
 
@@ -81,8 +81,8 @@ Go to **Settings → Variables** in the n8n UI and add them there. The workflows
 **For Each Site:**
 
 1.  Login to Ghost Admin:
-    - Site 1: https://ghost.founderreality.com/ghost/
-    - Site 2: https://ghost.getsimpledirect.com/ghost/
+    - Site 1: https://ghost.your-site-1.com/ghost/
+    - Site 2: https://ghost.your-site-2.com/ghost/
 
 2.  Go to **Settings** → **Integrations**
 
@@ -112,9 +112,24 @@ Example: `a7b8c9d0e1f2g3h4i5j6k7l8m9n0o1p2:q3r4s5t6u7v8w9x0y1z2a3b4c5d6e7f8...`
 
 ### Multi-Site Detection
 
-The workflow automatically detects which site by checking the post hostname:
-- Contains `founderreality` → Uses Site 1 credentials
-- Otherwise → Uses Site 2 credentials
+The workflow automatically detects which Ghost site to use by matching the post's URL hostname against your configured `GHOST_SITE1_URL` and `GHOST_SITE2_URL` environment variables.
+
+**How it works:**
+1. Extract the hostname from the incoming webhook's post URL (e.g., `ghost.mysite.com`)
+2. Compare against the hostnames derived from `GHOST_SITE1_URL` and `GHOST_SITE2_URL`
+3. Automatically select the matching site's credentials
+
+**Required configuration in `.env`:**
+```env
+GHOST_SITE1_URL=https://ghost.site1.com
+GHOST_SITE2_URL=https://ghost.site2.com
+GHOST_KEY_SITE1=<content-api-key-1>
+GHOST_KEY_SITE2=<content-api-key-2>
+GHOST_SITE1_ADMIN_API_KEY=<admin-key-1>
+GHOST_SITE2_ADMIN_API_KEY=<admin-key-2>
+```
+
+No manual adjustment needed - just configure your URLs!
 
 ---
 
@@ -199,7 +214,7 @@ If the audio isn't appearing:
 
 Example:
 ```
-founderreality-com-pid-69a9a6c97a9d08bae126a199-my-article-title-1234567890
+site1-com-pid-69a9a6c97a9d08bae126a199-my-article-title-1234567890
                         ^^^^^^^^^^^^^^^^^^^^^^^^
                         This is the post ID (24 hex chars)
 ```
@@ -213,7 +228,7 @@ founderreality-com-pid-69a9a6c97a9d08bae126a199-my-article-title-1234567890
 
 ### One Site Works, Other Doesn't
 
-**Symptoms:** Audio embeds on founderreality.com but not on getsimpledirect.com (or vice versa).
+**Symptoms:** Audio embeds on site1.com but not on site2.com (or vice versa).
 
 **Cause:** Missing or incorrect API key for the non-working site.
 
@@ -229,11 +244,11 @@ founderreality-com-pid-69a9a6c97a9d08bae126a199-my-article-title-1234567890
    ```bash
    # Get a post from Site 1
    curl -H "Authorization: Ghost YOUR_ADMIN_KEY_SITE1" \
-     https://ghost.founderreality.com/ghost/api/admin/posts/latest/
+     https://ghost.your-site-1.com/ghost/api/admin/posts/latest/
 
    # Get a post from Site 2
    curl -H "Authorization: Ghost YOUR_ADMIN_KEY_SITE2" \
-     https://ghost.getsimpledirect.com/ghost/api/admin/posts/latest/
+     https://ghost.your-site-2.com/ghost/api/admin/posts/latest/
    ```
 3. Both should return JSON with post data. If one fails, regenerate that site's Admin API key.
 
@@ -265,17 +280,25 @@ To support additional Ghost sites:
    ```
 
 2. **Update workflow detection logic** in both `ghost-audio-pipeline.json` and `ghost-audio-callback.json`:
-   - Find nodes that check `includes('founderreality')`
-   - Add additional condition for your third domain
-   - Update URL mappings to include your third site's URL
+    - Add additional conditions for your third domain using the same hostname matching pattern
+    - Update URL mappings to include your third site's URL
 
-Example:
+Example (for adding Site 3):
 ```javascript
-const apiKey = $json.siteSlug.includes('founderreality')
-  ? $env.GHOST_SITE1_ADMIN_API_KEY
-  : $json.siteSlug.includes('getsimpledirect')
-    ? $env.GHOST_SITE2_ADMIN_API_KEY
-    : $env.GHOST_SITE3_ADMIN_API_KEY;
+const postHostname = new URL(postUrl).hostname;
+const site3Url = $env.GHOST_SITE3_URL || '';
+const site3Hostname = site3Url ? new URL(site3Url).hostname : '';
+const isSite3 = postHostname.includes(site3Hostname);
+
+const adminApiKey = isSite1 ? adminApiKey1 : isSite2 ? adminApiKey2 : isSite3 ? adminApiKey3 : null;
+const ghostUrl = isSite1 ? site1Url : isSite2 ? site2Url : isSite3 ? site3Url : null;
+```
+
+Then add these to your `.env`:
+```env
+GHOST_SITE3_URL=https://ghost.site3.com
+GHOST_KEY_SITE3=<content-api-key-3>
+GHOST_SITE3_ADMIN_API_KEY=<admin-key-3>
 ```
 
 ---

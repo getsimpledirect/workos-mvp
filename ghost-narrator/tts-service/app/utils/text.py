@@ -1,3 +1,25 @@
+# MIT License
+#
+# Copyright (c) 2026 Ayush Naik
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
 """
 Text processing utilities for TTS service.
 
@@ -19,8 +41,20 @@ DEFAULT_MAX_CHUNK_WORDS: Final[int] = 200
 
 # Transition words that suggest a new topic/paragraph boundary
 _TRANSITION_STARTERS: Final[tuple[str, ...]] = (
-    "now,", "but ", "so ", "here", "this", "the ", "when", "if ",
-    "what", "think", "there", "at the", "in the", "for ",
+    "now,",
+    "but ",
+    "so ",
+    "here",
+    "this",
+    "the ",
+    "when",
+    "if ",
+    "what",
+    "think",
+    "there",
+    "at the",
+    "in the",
+    "for ",
 )
 
 
@@ -60,18 +94,18 @@ def split_into_chunks(text: str, max_words: int = DEFAULT_MAX_CHUNK_WORDS) -> li
         return []
 
     # Normalize whitespace
-    text = re.sub(r'\r\n', '\n', text)
-    text = re.sub(r'[ \t]+', ' ', text)
+    text = re.sub(r"\r\n", "\n", text)
+    text = re.sub(r"[ \t]+", " ", text)
 
     # Split into paragraphs
-    paragraphs = [p.strip() for p in re.split(r'\n\n+', text) if p.strip()]
+    paragraphs = [p.strip() for p in re.split(r"\n\n+", text) if p.strip()]
 
     chunks: list[str] = []
 
     for para in paragraphs:
         # Split paragraph into sentences using common sentence endings
         # Keep the punctuation with the sentence
-        sentences = re.split(r'(?<=[.!?])\s+', para.strip())
+        sentences = re.split(r"(?<=[.!?])\s+", para.strip())
         sentences = [s.strip() for s in sentences if s.strip()]
 
         current_chunk_words: list[str] = []
@@ -87,8 +121,11 @@ def split_into_chunks(text: str, max_words: int = DEFAULT_MAX_CHUNK_WORDS) -> li
 
             # If adding this sentence exceeds max_words and we already have content,
             # flush current chunk and start a new one
-            if current_word_count + sentence_word_count > max_words and current_chunk_words:
-                chunks.append(' '.join(current_chunk_words))
+            if (
+                current_word_count + sentence_word_count > max_words
+                and current_chunk_words
+            ):
+                chunks.append(" ".join(current_chunk_words))
                 current_chunk_words = []
                 current_word_count = 0
 
@@ -97,13 +134,13 @@ def split_into_chunks(text: str, max_words: int = DEFAULT_MAX_CHUNK_WORDS) -> li
 
             # If this single sentence is already at/over the limit, flush immediately
             if current_word_count >= max_words:
-                chunks.append(' '.join(current_chunk_words))
+                chunks.append(" ".join(current_chunk_words))
                 current_chunk_words = []
                 current_word_count = 0
 
         # Flush remaining words in this paragraph
         if current_chunk_words:
-            chunks.append(' '.join(current_chunk_words))
+            chunks.append(" ".join(current_chunk_words))
 
     # Filter empty or trivially short chunks
     chunks = [c.strip() for c in chunks if c.strip()]
@@ -140,7 +177,11 @@ def get_pause_ms_after_chunk(chunk: str, next_chunk: str | None) -> int:
     chunk_stripped = chunk.strip()
 
     # Paragraph-level break: current ends with sentence-final punctuation
-    if chunk_stripped.endswith('.') or chunk_stripped.endswith('!') or chunk_stripped.endswith('?'):
+    if (
+        chunk_stripped.endswith(".")
+        or chunk_stripped.endswith("!")
+        or chunk_stripped.endswith("?")
+    ):
         # Check if next chunk seems to be a new thought (starts with transition words)
         next_lower = next_chunk.lower().strip()
         if any(next_lower.startswith(t) for t in _TRANSITION_STARTERS):

@@ -174,7 +174,7 @@ if (-not $skipInteractive) {
     for ($i = 1; $i -le $SITE_COUNT; $i++) {
         Write-Host ""
         Write-Host "  Site $i" -ForegroundColor White
-        $ghostUrl = Read-Host "    Ghost URL (e.g. https://ghost.founderreality.com)"
+        $ghostUrl = Read-Host "    Ghost URL (e.g. https://ghost.your-site.com)"
         if (-not $ghostUrl) {
             Write-Err "Ghost URL cannot be empty"
             exit 1

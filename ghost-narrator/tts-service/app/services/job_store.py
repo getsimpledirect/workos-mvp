@@ -1,3 +1,25 @@
+# MIT License
+#
+# Copyright (c) 2026 Ayush Naik
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
 """
 Job storage abstraction layer.
 
@@ -198,7 +220,7 @@ class JobStore:
         """
         if not job_id:
             raise ValueError("job_id cannot be empty")
-        
+
         serializable_data = self._make_serializable(job_data)
 
         if self.use_redis and self.redis_client:
@@ -256,22 +278,24 @@ class JobStore:
                 end
                 return 0
                 """
-                
+
                 result = await self.redis_client.eval(
-                    lua_script, 
-                    1, 
-                    f"job:{job_id}", 
+                    lua_script,
+                    1,
+                    f"job:{job_id}",
                     json.dumps(serializable_updates, default=str),
-                    REDIS_JOB_TTL
+                    REDIS_JOB_TTL,
                 )
-                
+
                 if result == 1:
                     return
                 else:
                     logger.warning(f"Cannot update non-existent job in Redis: {job_id}")
                     return
             except Exception as exc:
-                logger.error(f"Redis update failed: {exc}. Falling back to non-atomic memory update")
+                logger.error(
+                    f"Redis update failed: {exc}. Falling back to non-atomic memory update"
+                )
                 # Fallback to in-memory
 
         async with self.lock:

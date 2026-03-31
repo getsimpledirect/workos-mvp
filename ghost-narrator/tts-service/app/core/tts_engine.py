@@ -1,3 +1,25 @@
+# MIT License
+#
+# Copyright (c) 2026 Ayush Naik
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
 """
 TTS Engine wrapper module for Fish Speech v1.5.
 
@@ -21,7 +43,14 @@ import numpy as np
 import soundfile as sf
 import torch
 from faster_whisper import WhisperModel
-from app.config import DEVICE, TTS_LANGUAGE, VOICE_SAMPLE_PATH, MAX_WORKERS, SEMANTIC_TOKEN_TIMEOUT, AUDIO_DECODE_TIMEOUT
+from app.config import (
+    DEVICE,
+    TTS_LANGUAGE,
+    VOICE_SAMPLE_PATH,
+    MAX_WORKERS,
+    SEMANTIC_TOKEN_TIMEOUT,
+    AUDIO_DECODE_TIMEOUT,
+)
 from app.core.exceptions import SynthesisError, TTSEngineError, VoiceSampleNotFoundError
 
 logger = logging.getLogger(__name__)
@@ -48,7 +77,9 @@ class TTSEngine:
                     instance = super().__new__(cls)
                     instance._initialized = False
                     instance._whisper_model = None
-                    instance._synthesis_lock = Semaphore(MAX_WORKERS if DEVICE == "cpu" else 1)
+                    instance._synthesis_lock = Semaphore(
+                        MAX_WORKERS if DEVICE == "cpu" else 1
+                    )
                     instance._active_processes: dict[str, set[subprocess.Popen]] = {}
                     instance._process_lock = Lock()
                     instance._device = DEVICE
@@ -143,14 +174,18 @@ class TTSEngine:
         try:
             if self._whisper_model is None:
                 # Use CPU for whisper to save VRAM for the main models
-                self._whisper_model = WhisperModel("tiny", device="cpu", compute_type="int8")
+                self._whisper_model = WhisperModel(
+                    "tiny", device="cpu", compute_type="int8"
+                )
 
             try:
                 segments, _ = self._whisper_model.transcribe(str(ref_path))
                 text = " ".join([segment.text for segment in segments]).strip()
 
                 if not text:
-                    logger.warning("Whisper transcribed empty text from reference audio")
+                    logger.warning(
+                        "Whisper transcribed empty text from reference audio"
+                    )
                     text = "Reference audio for voice cloning."
 
                 txt_path.write_text(text, encoding="utf-8")
@@ -293,7 +328,9 @@ class TTSEngine:
                 if not self._active_processes[job_id]:
                     del self._active_processes[job_id]
 
-    def synthesize_to_file(self, text: str, output_path: str, job_id: str = "default") -> str:
+    def synthesize_to_file(
+        self, text: str, output_path: str, job_id: str = "default"
+    ) -> str:
         """
         Synthesize text using Fish Speech v1.5 CLI-based inference.
 
@@ -317,7 +354,9 @@ class TTSEngine:
 
         with self._synthesis_lock:
             try:
-                logger.debug(f"[{job_id}] Synthesizing '{text[:50]}...' using Fish Speech v1.5")
+                logger.debug(
+                    f"[{job_id}] Synthesizing '{text[:50]}...' using Fish Speech v1.5"
+                )
 
                 with tempfile.TemporaryDirectory() as temp_dir:
                     # Step 1: Generate semantic tokens from text
@@ -341,7 +380,9 @@ class TTSEngine:
                 logger.error(f"Synthesis failed: {exc}")
                 raise SynthesisError(f"Failed to synthesize audio: {str(exc)}")
 
-    def _generate_semantic_tokens(self, text: str, cwd: str, job_id: str = "default") -> Path:
+    def _generate_semantic_tokens(
+        self, text: str, cwd: str, job_id: str = "default"
+    ) -> Path:
         """
         Generate semantic tokens from text using Fish Speech text2semantic model.
 
@@ -391,14 +432,16 @@ class TTSEngine:
                 stderr=subprocess.PIPE,
                 text=True,
             )
-            
+
             self._register_process(job_id, proc)
             try:
                 stdout, stderr = proc.communicate(timeout=SEMANTIC_TOKEN_TIMEOUT)
             except subprocess.TimeoutExpired:
                 proc.kill()
                 stdout, stderr = proc.communicate()
-                raise SynthesisError(f"Semantic token generation timed out (>{SEMANTIC_TOKEN_TIMEOUT}s)")
+                raise SynthesisError(
+                    f"Semantic token generation timed out (>{SEMANTIC_TOKEN_TIMEOUT}s)"
+                )
             finally:
                 self._unregister_process(job_id, proc)
 
@@ -425,7 +468,9 @@ class TTSEngine:
             logger.error(f"Semantic token generation failed: {exc}")
             raise SynthesisError("Failed to generate semantic tokens", details=str(exc))
 
-    def _decode_to_audio(self, codes_path: Path, output_path: str, cwd: str, job_id: str = "default") -> None:
+    def _decode_to_audio(
+        self, codes_path: Path, output_path: str, cwd: str, job_id: str = "default"
+    ) -> None:
         """
         Decode semantic tokens to audio using Fish Speech DAC decoder.
 
@@ -468,14 +513,16 @@ class TTSEngine:
                 stderr=subprocess.PIPE,
                 text=True,
             )
-            
+
             self._register_process(job_id, proc)
             try:
                 stdout, stderr = proc.communicate(timeout=AUDIO_DECODE_TIMEOUT)
             except subprocess.TimeoutExpired:
                 proc.kill()
                 stdout, stderr = proc.communicate()
-                raise SynthesisError(f"Audio decoding timed out (>{AUDIO_DECODE_TIMEOUT}s)")
+                raise SynthesisError(
+                    f"Audio decoding timed out (>{AUDIO_DECODE_TIMEOUT}s)"
+                )
             finally:
                 self._unregister_process(job_id, proc)
 

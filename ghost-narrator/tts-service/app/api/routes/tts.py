@@ -1,3 +1,25 @@
+# MIT License
+#
+# Copyright (c) 2026 Ayush Naik
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
 """
 TTS API routes.
 
@@ -83,7 +105,9 @@ def _sanitize_job_id(job_id: str | None) -> str:
     ),
     responses={
         202: {"description": "Job accepted and queued for processing"},
-        422: {"description": "Validation error (empty text, text too long, or invalid job_id)"},
+        422: {
+            "description": "Validation error (empty text, text too long, or invalid job_id)"
+        },
         503: {"description": "Service unavailable (voice sample not configured)"},
     },
 )
@@ -154,9 +178,9 @@ async def generate(
         "local_path": None,
         "created_at": time.time(),
     }
-    
+
     created = await job_store.create_if_not_exists(job_id, initial_data)
-    
+
     if not created:
         existing_job = await job_store.get(job_id)
         existing_status = existing_job.get("status") if existing_job else None
@@ -195,7 +219,7 @@ async def generate(
     },
 )
 async def get_status(
-    job_id: str = FastApiPath(..., pattern=r"^[a-zA-Z0-9_-]+$", max_length=200)
+    job_id: str = FastApiPath(..., pattern=r"^[a-zA-Z0-9_-]+$", max_length=200),
 ) -> StatusResponse:
     """Get the status of a TTS job."""
     job_store = get_job_store()
@@ -222,7 +246,7 @@ async def get_status(
     },
 )
 async def download(
-    job_id: str = FastApiPath(..., pattern=r"^[a-zA-Z0-9_-]+$", max_length=200)
+    job_id: str = FastApiPath(..., pattern=r"^[a-zA-Z0-9_-]+$", max_length=200),
 ) -> FileResponse:
     """Download the generated MP3 audio file."""
     job_store = get_job_store()
@@ -294,7 +318,7 @@ async def download(
     },
 )
 async def pause_job(
-    job_id: str = FastApiPath(..., pattern=r"^[a-zA-Z0-9_-]+$", max_length=200)
+    job_id: str = FastApiPath(..., pattern=r"^[a-zA-Z0-9_-]+$", max_length=200),
 ) -> StatusResponse:
     """Pause a TTS job."""
     job_store = get_job_store()
@@ -328,7 +352,7 @@ async def pause_job(
     },
 )
 async def resume_job(
-    job_id: str = FastApiPath(..., pattern=r"^[a-zA-Z0-9_-]+$", max_length=200)
+    job_id: str = FastApiPath(..., pattern=r"^[a-zA-Z0-9_-]+$", max_length=200),
 ) -> StatusResponse:
     """Resume a TTS job."""
     job_store = get_job_store()
@@ -359,7 +383,7 @@ async def resume_job(
     },
 )
 async def delete_job(
-    job_id: str = FastApiPath(..., pattern=r"^[a-zA-Z0-9_-]+$", max_length=200)
+    job_id: str = FastApiPath(..., pattern=r"^[a-zA-Z0-9_-]+$", max_length=200),
 ) -> dict[str, Any]:
     """Delete a TTS job and cleanup resources."""
     job_store = get_job_store()
@@ -370,11 +394,12 @@ async def delete_job(
 
     # 1. Update status to 'deleted' to signal the background worker to stop
     await job_store.update(job_id, {"status": "deleted"})
-    
+
     # 2. Instantly kill any active synthesis processes
     from app.core.tts_engine import get_tts_engine
+
     get_tts_engine().cancel_job(job_id)
-    
+
     logger.info(f"TTS job signal for deletion: {job_id}")
 
     # 3. Cleanup local files if they exist
@@ -385,6 +410,7 @@ async def delete_job(
     try:
         if job_dir.exists():
             import shutil
+
             shutil.rmtree(job_dir, ignore_errors=True)
         if final_mp3.exists():
             final_mp3.unlink(missing_ok=True)

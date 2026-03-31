@@ -1,5 +1,8 @@
 {
   "name": "Ghost Article → Audio Pipeline",
+  "license": "MIT",
+  "licenseUrl": "https://opensource.org/licenses/MIT",
+  "author": "Ayush Naik",
   "nodes": [
     {
       "id": "webhook-ghost",
@@ -86,7 +89,7 @@
       ],
       "parameters": {
         "method": "GET",
-        "url": "={{ $json.siteBase }}/ghost/api/content/posts/slug/{{ $json.postSlug }}/",
+        "url": "={{ (() => { const h = $json.hostname; const s1 = $env.GHOST_SITE1_URL || ''; const s2 = $env.GHOST_SITE2_URL || ''; const s1h = s1 ? new URL(s1).hostname : ''; const s2h = s2 ? new URL(s2).hostname : ''; return h.includes(s1h) ? s1 : h.includes(s2h) ? s2 : s1; })() }}/ghost/api/content/posts/slug/{{ $json.postSlug }}/",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -101,7 +104,7 @@
           "parameters": [
             {
               "name": "key",
-              "value": "={{ $json.hostname.includes('founderreality') ? ($env.GHOST_KEY_SITE1 || $vars.GHOST_KEY_SITE1) : ($env.GHOST_KEY_SITE2 || $vars.GHOST_KEY_SITE2) }}"
+              "value": "={{ $json.siteSlug.includes($json.siteSlug.split('-')[0]) ? ($env.GHOST_KEY_SITE1 || $vars.GHOST_KEY_SITE1) : ($env.GHOST_KEY_SITE2 || $vars.GHOST_KEY_SITE2) }}"
             },
             {
               "name": "formats",
