@@ -6,12 +6,14 @@ We currently support the following versions of Ghost Narrator:
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 1.3.x   | :white_check_mark: |
-| < 1.3   | :x:                |
+| Latest  | :white_check_mark: |
+| < 1.0   | :x:                |
+
+*The current release is v1.3.0 - see [releases](https://github.com/getsimpledirect/workos-mvp/releases) for details.*
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability within Ghost Narrator, please send an e-mail to security@ghost-narrator.dev. All security vulnerabilities will be promptly addressed.
+If you discover a security vulnerability within Ghost Narrator, please open an issue at **https://github.com/getsimpledirect/workos-mvp/security** or email security@ayushnaik.com. All security vulnerabilities will be promptly addressed.
 
 Please include the following information:
 
@@ -48,7 +50,7 @@ Ghost Narrator uses a **defense-in-depth** approach with multiple security layer
 The TTS service is designed to run on an internal Docker network, not exposed to the public internet. The `docker-compose.yml` configuration keeps services isolated:
 
 - **TTS Service** (`tts-service`) - Internal only, not exposed to host
-- **n8n** (`n8n`) - Exposed on port 5678 for webhook接收
+- **n8n** (`n8n`) - Exposed on port 5678 for webhook receiving
 - **Redis** (`redis`) - Internal only
 
 This means the TTS service can only be accessed by other services in the same Docker network (primarily n8n), not directly from the internet.

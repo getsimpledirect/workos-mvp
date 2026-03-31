@@ -48,7 +48,10 @@ Thank you for your interest in contributing to Ghost Narrator!
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/ghost-narrator.git
+git clone https://github.com/getsimpledirect/workos-mvp.git
+cd workos-mvp
+
+# Navigate to ghost-narrator
 cd ghost-narrator
 
 # Copy environment template
