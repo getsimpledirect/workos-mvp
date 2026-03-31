@@ -45,17 +45,37 @@ jobs:
 
           if [ $CZ_EXIT -eq 0 ]; then
             echo "bumped=true" >> $GITHUB_OUTPUT
+            echo "version=$(cat VERSION)" >> $GITHUB_OUTPUT
+          elif [ $CZ_EXIT -eq 7 ]; then
+            # Tag already exists — orphaned from a previous failed run.
+            # Delete the stale tag and retry once.
+            NEXT_VERSION=$(cz version --project)
+            STALE_TAG="v${NEXT_VERSION}"
+            echo "Stale tag ${STALE_TAG} found — deleting and retrying..."
+            git tag -d "$STALE_TAG" 2>/dev/null || true
+            git push origin --delete "$STALE_TAG" 2>/dev/null || true
+
+            set +e
+            cz bump --yes
+            CZ_EXIT2=$?
+            set -e
+
+            if [ $CZ_EXIT2 -eq 0 ]; then
+              echo "bumped=true" >> $GITHUB_OUTPUT
+              echo "version=$(cat VERSION)" >> $GITHUB_OUTPUT
+            else
+              echo "Retry failed (exit $CZ_EXIT2) — skipping release"
+              echo "bumped=false" >> $GITHUB_OUTPUT
+            fi
           else
             echo "No bumpable commits found (exit $CZ_EXIT) — skipping release"
             echo "bumped=false" >> $GITHUB_OUTPUT
           fi
 
-          echo "version=$(cat VERSION)" >> $GITHUB_OUTPUT
-
       - name: Push bump via PR
         if: steps.bump.outputs.bumped == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           BUMP_BRANCH="auto/bump-v${{ steps.bump.outputs.version }}"
           git checkout -b "$BUMP_BRANCH"
