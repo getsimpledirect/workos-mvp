@@ -111,7 +111,7 @@ scipy>=1.11.0
 inflect==7.0.0
 huggingface-hub>=0.36.0
 anyascii==0.3.2
-gruut[de,es,fr]==2.2.3
+gruut[de,es,fr]==2.4.0
 bangla==0.0.2
 bnnumerizer==0.0.2
 bnunicodenormalizer==0.1.6
