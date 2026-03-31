@@ -96,7 +96,7 @@ Every time you publish a post on your [Ghost](https://ghost.org/) website, this 
 │                                                                           │
 │  ┌──────────────────────────────────────────────────────────────┐       │
 │  │  Google Cloud Storage                                          │       │
-│  │  gs://ghost-narrator/audio/articles/site/slug.mp3            │       │
+│  │  gs://YOUR_BUCKET/audio/articles/site/slug.mp3               │       │
 │  └──────────────────────────────────────────────────────────────┘       │
 └───────────────────────────────────────────────────────────────────────────┘
 ```

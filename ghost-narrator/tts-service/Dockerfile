@@ -18,9 +18,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv for blazingly fast dependency resolution and installation
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="/root/.local/bin:$PATH"
+# Install uv globally for blazingly fast dependency resolution and installation
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
+    cp /root/.local/bin/uv /usr/local/bin/uv && \
+    cp /root/.local/bin/uvx /usr/local/bin/uvx
+ENV PATH="/usr/local/bin:$PATH"
 
 WORKDIR /app
 
@@ -50,6 +52,13 @@ COPY app/ ./app/
 
 # Create necessary directories
 RUN mkdir -p /app/voices /app/output
+
+# Create non-root user and set ownership
+RUN groupadd --gid 1000 appuser && \
+    useradd --uid 1000 --gid appuser --shell /bin/bash --create-home appuser && \
+    chown -R appuser:appuser /app
+
+USER appuser
 
 # Expose the service port
 EXPOSE 8020
