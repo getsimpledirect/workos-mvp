@@ -161,5 +161,5 @@ See `docs/ARCHITECTURE.md` for technical details.
 
 ---
 
-[Unreleased]: https://github.com/getsimpledirect/ghost-narrator/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/getsimpledirect/ghost-narrator/releases/tag/v1.0.0
+[Unreleased]: https://github.com/getsimpledirect/workos-mvp/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/getsimpledirect/workos-mvp/releases/tag/v1.0.0
