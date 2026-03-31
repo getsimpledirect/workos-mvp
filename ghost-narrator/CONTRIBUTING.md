@@ -49,16 +49,12 @@ Thank you for your interest in contributing to Ghost Narrator!
 ```bash
 # Clone the repository
 git clone https://github.com/getsimpledirect/workos-mvp.git
-cd workos-mvp
-
-# Navigate to ghost-narrator
-cd ghost-narrator
+cd workos-mvp/ghost-narrator
 
 # Copy environment template
 cp .env.example .env
 
 # Start services
-cd ghost-narrator
 ./scripts/init.sh
 ```
 
