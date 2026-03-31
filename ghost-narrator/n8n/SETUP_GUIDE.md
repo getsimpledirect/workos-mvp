@@ -63,8 +63,8 @@ Go to **Settings → Variables** in the n8n UI and add them there. The workflows
 
 **Core Services:**
 *   `VLLM_BASE_URL`: URL to your vLLM API. Match this to your actual vLLM server — the path matters:
-    - If vLLM serves at the root: `http://host.docker.internal:8000`
-    - If vLLM serves under `/v1`: `http://host.docker.internal:8000/v1`
+    - If vLLM serves at the root: `http://host.docker.internal:8001`
+    - If vLLM serves under `/v1`: `http://host.docker.internal:8001/v1`
 *   `VLLM_MODEL_NAME`: Model name (e.g., `Qwen/Qwen3-14B`).
 *   `TTS_SERVICE_URL`: URL to TTS service (e.g., `http://tts-service:8020`). *Pre-configured in docker-compose.yml.*
 
