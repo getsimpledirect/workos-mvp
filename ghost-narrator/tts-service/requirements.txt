@@ -12,7 +12,7 @@
 
 # ── Build Tools (Pinned for legacy pkg_resources support) ─────────────
 setuptools==68.2.2
-wheel==0.44.0
+wheel==0.46.3
 pip>=24.0
 
 # ── PyTorch Stack (Pinned to stable CUDA 12.1 compatible versions) ────────────
