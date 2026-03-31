@@ -20,7 +20,7 @@ Publish an article on Ghost CMS → Ghost Narrator automatically generates a voi
 Ghost CMS (publish) → n8n (orchestrate) → LLM (rewrite for narration) → Fish Speech v1.5 (synthesize) → Storage (MP3) → Ghost (embed player)
 ```
 
-> **Hear it in action:** [your-ghost-site.com/blog](https://your-ghost-site.com/blog) *(replace with actual link)*
+> **Read the full story:** [I Almost Paid $4,000/Year to Rent My Own Voice](https://founderreality.com/blog/i-almost-paid-4-000-a-year-to-rent-my-own-voice) — why we built this and how it works.
 
 ---
 
