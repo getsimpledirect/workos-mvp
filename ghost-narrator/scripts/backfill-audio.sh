@@ -1,4 +1,26 @@
 #!/usr/bin/env bash
+# MIT License
+#
+# Copyright (c) 2026 Ayush Naik
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Ghost Narrator — Audio Backfill Script
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -184,7 +206,7 @@ if [ "${1:-}" != "--config" ]; then
     for i in $(seq 1 "$SITE_COUNT"); do
         echo ""
         echo -e "${BOLD}  Site ${i}${NC}"
-        read -r -p "    Ghost URL (e.g. https://ghost.founderreality.com): " ghost_url
+        read -r -p "    Ghost URL (e.g. https://ghost.your-site.com): " ghost_url
         if [ -z "$ghost_url" ]; then err "Ghost URL cannot be empty"; exit 1; fi
         read -r -p "    Content API key: " ghost_key
         if [ -z "$ghost_key" ]; then err "Content API key cannot be empty"; exit 1; fi

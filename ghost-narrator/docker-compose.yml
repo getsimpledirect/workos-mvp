@@ -98,7 +98,7 @@ services:
       - GENERIC_TIMEZONE=${TIMEZONE:-UTC}
       # External services (passed to workflow)
       - VLLM_BASE_URL=${VLLM_BASE_URL:-http://host.docker.internal:8001/v1}
-      - VLLM_MODEL_NAME=${VLLM_MODEL_NAME:-Qwen/Qwen3-14B}
+      - VLLM_MODEL_NAME=${VLLM_MODEL_NAME:-Qwen/Qwen3-14B-AWQ}
       - TTS_SERVICE_URL=http://tts-service:8020
       # Ghost API Keys (for fetching article content and updating posts)
       - GHOST_SITE1_URL=${GHOST_SITE1_URL:-}

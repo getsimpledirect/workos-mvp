@@ -392,6 +392,16 @@ docker logs -f tts-service
 4. **Configure GCS**: Enable automatic cloud storage
 5. **Production deployment**: Review security and scaling
 
+### Security Model
+
+The TTS service is designed as an **internal microservice** within the Ghost Narrator pipeline:
+
+- Runs on internal Docker network (not exposed to internet)
+- Called only by n8n workflow (not directly by users)
+- Protected by Docker network isolation and VM firewall
+
+**For production:** Ensure the service is not directly exposed to the internet. Access through n8n or a reverse proxy with authentication.
+
 For detailed documentation, see [README.md](./README.md)
 
 ---

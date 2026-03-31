@@ -1,441 +1,276 @@
-# WorkOS MVP
+<p align="center">
+  <img src="assets/ghost-narrator-banner.png" alt="Ghost Narrator — Open Source AI Narration for Your Blog" width="100%">
+</p>
 
-> **AI-Powered Infrastructure Stack** — Local LLM inference, vector database, and automated content pipelines.
+# Ghost Narrator
 
----
+Self-hosted AI narration for your blog. Replaces ElevenLabs (~$330/month) with a local stack that costs you electricity.
 
-## 📋 Table of Contents
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-- [Overview](#overview)
-- [Architecture](#architecture)
-- [Components](#components)
-- [Prerequisites](#prerequisites)
-- [Quick Start](#quick-start)
-- [Services](#services)
-- [Ghost Narrator Pipeline](#ghost-narrator-pipeline)
-- [Configuration](#configuration)
-- [Usage](#usage)
-- [Troubleshooting](#troubleshooting)
-- [License](#license)
+> **Licensing Notice:** Ghost Narrator currently uses Fish Speech v1.5 for TTS, which is licensed under CC BY-NC-SA 4.0 (non-commercial use only). **This means you cannot use Ghost Narrator commercially as-is.** We are actively migrating to Qwen3-TTS (Apache 2.0) which will enable full commercial use. Stay tuned — ETA: this week. See [Licensing](#licensing) below for details.
 
 ---
 
-## Overview
+## What It Does
 
-WorkOS MVP is a comprehensive AI infrastructure stack designed for self-hosted, privacy-first AI workflows. It combines local LLM inference with workflow automation to power intelligent content pipelines.
+Publish an article on Ghost CMS → Ghost Narrator automatically generates a voice-narrated audio version using your cloned voice and embeds the player in your post. No cloud TTS APIs. No per-character billing. Your voice, your hardware, your data.
 
-### Key Features
+```
+Ghost CMS (publish) → n8n (orchestrate) → LLM (rewrite for narration) → Fish Speech v1.5 (synthesize) → Storage (MP3) → Ghost (embed player)
+```
 
-- **Local LLM Inference** — Run Qwen3-14B locally with vLLM for fast, private AI processing.
-- **Vector Database** — ChromaDB for semantic search and RAG applications.
-- **Web UI** — Open WebUI for interactive chat with your local models.
-- **Audio Pipeline** — Automated voice narration for Ghost CMS articles using voice cloning.
-- **Workflow Orchestration** — n8n for visual workflow automation and integrations.
+> **Read the full story:** [You Cannot Buy What Can Only Be Built](https://founderreality.com/blog/you-cannot-buy-what-can-only-be-built) — why we built this and how it works.
+
+---
+
+## Cost Comparison
+
+| | ElevenLabs Scale | Ghost Narrator |
+|---|---|---|
+| Monthly cost | ~$330 | $0 (self-hosted) |
+| Per-character billing | Yes | No |
+| Voice cloning | Yes | Yes (30-60s voice sample) |
+| Data privacy | Cloud | 100% local |
+| Latency | Fast | ~2-5 min per article |
+| Quality | Excellent | Good (some trade-offs) |
+| Effort to set up | Sign up | ~1 hour |
+
+---
+
+## What You Need
+
+Ghost Narrator lives in the `ghost-narrator/` directory. It needs three things:
+
+1. **A [Ghost](https://ghost.org/) blog** — the open-source publishing platform ([GitHub](https://github.com/TryGhost/Ghost))
+2. **An LLM endpoint** — any OpenAI-compatible API (local or cloud)
+3. **A GPU** — for voice synthesis with Fish Speech v1.5
+
+That's it. You bring your own LLM, your own infrastructure. Ghost Narrator doesn't care if you're running Qwen on a Mac Mini, Llama on a rented GPU, or hitting the OpenAI API.
+
+### Our Setup (Optional)
+
+This repo also includes the AI infrastructure stack we run internally at SimpleDirect — vLLM (Qwen3-14B), ChromaDB, Open WebUI, and SearXNG. It runs on a single machine via the root `docker-compose.yml`. You're welcome to use it, but **Ghost Narrator works with any OpenAI-compatible LLM endpoint**. If you already have one, skip straight to the [Quick Start](#quick-start).
+
+<details>
+<summary>Want our full AI stack? Click here.</summary>
+
+The root `docker-compose.yml` spins up:
+
+| Service | Port | Description |
+|---------|------|-------------|
+| **vLLM (Qwen3-14B)** | 8001 | Local LLM inference, OpenAI-compatible API |
+| **ChromaDB** | 8000 | Vector database for embeddings & RAG |
+| **Open WebUI** | 3000 | Chat interface for your local models |
+| **SearXNG** | 8888 | Private metasearch engine |
+
+```bash
+# Start the full stack
+./start-core.sh
+
+# Then point Ghost Narrator at it
+VLLM_BASE_URL=http://host.docker.internal:8001/v1
+VLLM_MODEL_NAME=Qwen/Qwen3-14B-AWQ
+```
+
+**Hardware for the full stack:** NVIDIA GPU with 16GB+ VRAM, 32GB RAM, 300GB SSD. We run everything on a single machine.
+
+</details>
 
 ---
 
 ## Architecture
 
+```mermaid
+flowchart TD
+    A["📝 Ghost CMS<br>Publish Article"] -->|"webhook"| B["⚡ n8n<br>Workflow Orchestration"]
+    B -->|"rewrite"| C["🧠 LLM<br>Any OpenAI-compatible endpoint"]
+    B <-->|"job state"| D["📦 Redis"]
+    C -->|"narration script"| E["🎙️ TTS Service<br>Fish Speech v1.5"]
+    E -->|"MP3"| F["💾 Storage<br>Local or GCS"]
+    B -->|"embed player"| G["🔊 Ghost CMS<br>Audio in Post"]
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                        WorkOS MVP Infrastructure                         │
-│                                                                           │
-│  ┌─────────────────────────────────────────────────────────────────────┐ │
-│  │                     Core AI Services (docker-compose.yml)            │ │
-│  │                                                                       │ │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐ │
-│  │  │   ChromaDB   │  │   vLLM API   │  │   SearXNG    │  │  Open WebUI  │ │
-│  │  │   Vector DB  │  │  Qwen3-14B   │  │  Web Search  │  │  Interface   │ │
-│  │  │   :8000      │  │  :8001       │  │  :8888       │  │  :3000       │ │
-│  │  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘ │
-│  └─────────────────────────────────────────────────────────────────────┘ │
-│                                                                           │
-│  ┌─────────────────────────────────────────────────────────────────────┐ │
-│  │               Ghost Narrator Pipeline (ghost-narrator/)              │ │
-│  │                                                                       │ │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐       │ │
-│  │  │    Redis     │  │     n8n      │  │    TTS Service       │       │ │
-│  │  │  Job Store   │  │  Workflows   │  │  Fish Speech v1.5    │       │ │
-│  │  │  :6379       │  │  :5678       │  │   :8020              │       │ │
-│  │  └──────────────┘  └──────────────┘  └──────────────────────┘       │ │
-│  └─────────────────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Components
-
-### Core Stack (`docker-compose.yml`)
-
-| Service | Port | Description |
-|---------|------|-------------|
-| **ChromaDB** | 8000 | Vector database for embeddings and semantic search |
-| **vLLM (Qwen3-14B)** | 8001 | High-performance LLM inference with OpenAI-compatible API |
-| **SearXNG** | 8888 | Locally hosted metasearch engine for live web knowledge |
-| **Open WebUI** | 3000 | Modern chat interface for interacting with local models |
-
-### Ghost Narrator Pipeline (`ghost-narrator/`)
-
-| Service | Port | Description |
-|---------|------|-------------|
-| **Redis** | 6379 | Job state persistence and queue management |
-| **n8n** | 5678 | Visual workflow orchestration and automation |
-| **TTS Service** | 8020 | Voice-cloning TTS API using Fish Speech v1.5 |
 
 ---
 
 ## Prerequisites
 
-### Hardware Requirements
+**Hardware:**
+- NVIDIA GPU with 4GB+ VRAM for TTS only (16GB+ if also running your own LLM)
+- 8GB+ RAM
+- 50GB+ SSD
 
-- **GPU**: NVIDIA GPU with 16GB+ VRAM (L4, RTX 4090, or equivalent)
-- **RAM**: 16GB minimum, 32GB recommended
-- **Storage**: 300GB+ SSD for models and data
+**Software:**
+- Docker with Docker Compose V2
+- NVIDIA Container Toolkit
+- Git
 
-### Software Requirements
-
-- **Docker** with Docker Compose V2
-- **NVIDIA Container Toolkit** (for GPU support)
-- **Git**
-
-### Optional
-
-- **Google Cloud SDK** (for GCS audio storage)
-- **Ghost CMS** (for audio pipeline integration)
+**You also need:**
+- A [Ghost](https://ghost.org/) blog ([open source](https://github.com/TryGhost/Ghost))
+- An OpenAI-compatible LLM endpoint (local or cloud)
+- A 30-60 second WAV recording of your voice (45+ seconds recommended)
 
 ---
 
 ## Quick Start
 
-### 1. Clone the Repository
-
 ```bash
-git clone https://github.com/your-org/workos-mvp.git
-cd workos-mvp
-```
+# Clone
+git clone https://github.com/getsimpledirect/workos-mvp.git
+cd workos-mvp/ghost-narrator
 
-### 2. Start Core AI Services
-
-We use a helper script to automatically retrieve credentials from GCP Secret Manager and boot the stack:
-
-```bash
-# Start ChromaDB, vLLM, SearXNG, and Open WebUI
-chmod +x start-core.sh
-./start-core.sh
-
-# Check service health
-docker compose ps
-docker compose logs -f vllm-qwen3-14b
-```
-
-### 3. Access Services
-
-- **Open WebUI**: http://localhost:3000
-- **vLLM API**: http://localhost:8001/v1
-- **ChromaDB**: http://localhost:8000
-
----
-
-## Services
-
-### ChromaDB
-
-Persistent vector database for embeddings storage.
-
-```bash
-# Health check
-curl http://localhost:8000/api/v1/heartbeat
-
-# Use with Python
-pip install chromadb
-```
-
-```python
-import chromadb
-
-client = chromadb.HttpClient(host="localhost", port=8000)
-collection = client.create_collection("documents")
-```
-
-### vLLM (Qwen3-14B)
-
-OpenAI-compatible API for local LLM inference.
-
-```bash
-# Chat completion
-curl http://localhost:8001/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "Qwen/Qwen3-14B-AWQ",
-    "messages": [{"role": "user", "content": "Hello!"}]
-  }'
-```
-
-**Configuration:**
-
-- Model: `Qwen/Qwen3-14B-AWQ` (quantized for efficiency)
-- Context Length: 28,000 tokens
-- GPU Memory Utilization: 92%
-
-### Open WebUI
-
-Modern chat interface connected to your local vLLM instance.
-
-- Access at http://localhost:3000
-- First user registration creates admin account
-- Supports multiple conversations, file uploads, and RAG
-- **Web Search**: Integrated with local SearXNG instance. Click the `+` button or search icon in chat to enable real-time web search for the LLM.
-
----
-
-## Ghost Narrator Pipeline
-
-Automatically convert Ghost CMS articles into voice-narrated audio using your cloned voice.
-
-### How It Works
-
-1. **Ghost Webhook** triggers on article publish
-2. **n8n** orchestrates the pipeline
-3. **vLLM** rewrites content for narration
-4. **TTS Service** synthesizes audio with cloned voice
-5. **GCS** stores the final MP3 files
-
-### Setup
-
-```bash
-cd ghost-narrator
-
-# Create environment file
+# Configure
 cp .env.example .env
-# Edit .env with your configuration
+# Edit .env — at minimum set:
+#   GHOST_SITE1_URL, GHOST_SITE1_ADMIN_API_KEY, GHOST_KEY_SITE1
+#   VLLM_BASE_URL (any OpenAI-compatible endpoint)
+#   SERVER_EXTERNAL_IP
 
-# Add your voice sample (6-60 seconds WAV, 45+ seconds recommended)
+# Add your voice sample (30-60 seconds WAV, 45+ recommended)
 cp /path/to/your/voice.wav tts-service/voices/reference.wav
 
-# Initialize and start services
+# Start
 ./scripts/init.sh
 ```
 
-### Required Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `SERVER_EXTERNAL_IP` | External IP for webhook URLs |
-| `N8N_USER` | n8n admin username |
-| `N8N_PASSWORD` | n8n admin password |
-| `N8N_ENCRYPTION_KEY` | n8n encryption key (`openssl rand -hex 32`) |
-| `GCS_BUCKET_NAME` | GCS bucket for audio storage |
-| `VLLM_BASE_URL` | URL to vLLM API |
-| `VLLM_MODEL_NAME` | Model name for vLLM |
-| `GHOST_SITE1_ADMIN_API_KEY` | Admin API key for Ghost site 1 |
-| `GHOST_SITE2_ADMIN_API_KEY` | Admin API key for Ghost site 2 |
-| `TTS_DEVICE` | Device to run TTS on (`cpu` or `cuda`) |
-| `MAX_WORKERS` | Number of parallel workers for CPU synthesis |
-| `TIMEZONE` | Timezone for the n8n container |
-
-
-### GCP Setup (Optional)
-
-For Google Cloud Storage integration:
-
-```bash
-# Configure GCP resources (bucket, service account, IAM)
-./scripts/setup-gcp.sh
+Then configure your Ghost site to send webhooks to:
+```
+http://YOUR_VM_IP:5678/webhook/ghost-published
 ```
 
-### Documentation
+Publish an article. Ghost Narrator handles the rest.
 
-- [Full Architecture Guide](ghost-narrator/docs/ARCHITECTURE.md)
-- [TTS Service Documentation](ghost-narrator/tts-service/README.md)
-- [TTS Quick Start](ghost-narrator/tts-service/QUICKSTART.md)
+### Storage Options
+
+**Local (default):** Audio files saved to `ghost-narrator/tts-service/output/`. No cloud account needed.
+
+**Google Cloud Storage (optional):** For production, store audio in GCS:
+```bash
+./scripts/setup-gcp.sh
+```
 
 ---
 
 ## Configuration
 
-### Environment Variables
+### Required
 
-Create a `.env` file in the appropriate directory:
+| Variable | Description |
+|----------|-------------|
+| `GHOST_SITE1_URL` | Your Ghost site URL |
+| `GHOST_SITE1_ADMIN_API_KEY` | Ghost Admin API key (Settings → Integrations) |
+| `GHOST_KEY_SITE1` | Ghost Content API key |
+| `VLLM_BASE_URL` | Any OpenAI-compatible endpoint URL |
+| `VLLM_MODEL_NAME` | Model name at that endpoint |
+| `SERVER_EXTERNAL_IP` | VM's external IP for webhooks |
+| `N8N_USER` / `N8N_PASSWORD` | n8n admin credentials |
+| `N8N_ENCRYPTION_KEY` | Run `openssl rand -hex 32` |
 
-**Root level (Core Services):**
+### Optional
 
-```env
-WEBUI_URL=http://localhost:3000
-SEARXNG_SECRET=your-static-secret-here # Only needed if not using start-core.sh and GCP Secret Manager
-```
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `GCS_BUCKET_NAME` | GCS bucket for audio | *(local if unset)* |
+| `TTS_DEVICE` | `cuda` or `cpu` | `cuda` |
+| `MAX_WORKERS` | Parallel workers (CPU mode) | `4` |
+| `MAX_CHUNK_WORDS` | Words per TTS chunk | `200` |
+| `GHOST_SITE2_URL` | Second Ghost site | *(single site)* |
 
-**ghost-narrator/ (Audio Pipeline):**
+See [`ghost-narrator/.env.example`](ghost-narrator/.env.example) for the full list.
 
-```env
-SERVER_EXTERNAL_IP=your-vm-external-ip
-N8N_USER=admin
-N8N_PASSWORD=your-secure-password
-N8N_ENCRYPTION_KEY=<openssl rand -hex 32>
-GCS_BUCKET_NAME=your-gcs-bucket-name
-VLLM_BASE_URL=http://host.docker.internal:8000
-VLLM_MODEL_NAME=Qwen/Qwen3-14B-AWQ
-GHOST_SITE1_ADMIN_API_KEY=your-admin-key-1
-GHOST_SITE2_ADMIN_API_KEY=your-admin-key-2
-TTS_DEVICE=cpu
-MAX_WORKERS=4
-TIMEZONE=UTC
-```
+### LLM Compatibility
 
-### GPU Memory Planning
+Ghost Narrator works with any OpenAI-compatible chat completion endpoint:
 
-| Service | VRAM Usage |
-|---------|------------|
-| vLLM (Qwen3-14B-AWQ) | ~8GB |
-| TTS Service (Fish Speech v1.5) | ~2-3GB |
-| **Total** | ~10-11GB |
+| Provider | `VLLM_BASE_URL` | `VLLM_MODEL_NAME` |
+|----------|------------------|--------------------|
+| Local vLLM (this repo) | `http://host.docker.internal:8001/v1` | `Qwen/Qwen3-14B-AWQ` |
+| Ollama | `http://host.docker.internal:11434/v1` | `qwen3:14b` |
+| OpenAI API | `https://api.openai.com/v1` | `gpt-4o-mini` |
+| Any compatible | Your endpoint URL | Your model name |
+
+### GPU Memory (if running the full stack)
+
+| Service | VRAM |
+|---------|------|
+| vLLM (Qwen3-14B-AWQ) | ~8 GB |
+| TTS (Fish Speech v1.5) | ~2-3 GB |
+| **Total** | **~10-11 GB** |
 
 ---
 
-## Usage
+## Multi-Site Support
 
-### Starting All Services
+Ghost Narrator supports multiple Ghost sites. The workflow automatically detects which site a post belongs to by matching the webhook URL hostname against your configured `GHOST_SITE1_URL` and `GHOST_SITE2_URL`.
 
-```bash
-# Core AI services
-./start-core.sh
-
-# Ghost Narrator pipeline
-cd ghost-narrator
-./scripts/init.sh
-```
-
-### Stopping Services
-
-```bash
-# Core services
-docker compose down
-
-# Ghost Narrator
-cd ghost-narrator
-docker compose down
-```
-
-### Viewing Logs
-
-```bash
-# All services
-docker compose logs -f
-
-# Specific service
-docker compose logs -f vllm-qwen3-14b
-docker compose logs -f tts-service
-```
-
-### Health Checks
-
-```bash
-# ChromaDB
-curl http://localhost:8000/api/v1/heartbeat
-
-# vLLM
-curl http://localhost:8001/health
-
-# TTS Service
-curl http://localhost:8020/health
-
-# n8n
-curl http://localhost:5678/healthz
-```
+See the [n8n Setup Guide](ghost-narrator/n8n/SETUP_GUIDE.md) for adding more sites.
 
 ---
 
 ## Troubleshooting
 
-### vLLM Won't Start
+| Problem | Solution |
+|---------|----------|
+| TTS health check times out | First run downloads ~4GB models. Wait up to 5 min. |
+| Webhooks don't trigger | Check `SERVER_EXTERNAL_IP` and firewall on port 5678. |
+| Audio not embedded in Ghost | Verify Admin API key. Check: `docker compose logs n8n` |
+| LLM errors | Test your endpoint: `curl $VLLM_BASE_URL/chat/completions` |
+| vLLM crashes (full stack) | Check GPU: `nvidia-smi`. Reduce `--gpu-memory-utilization` (currently `0.75`). |
 
-**Symptoms:** Container crashes or fails health check
-
-**Solutions:**
-
-1. Check GPU availability: `nvidia-smi`
-2. Verify NVIDIA Container Toolkit: `docker run --rm --gpus all nvidia/cuda:11.0-base nvidia-smi`
-3. Check logs: `docker compose logs vllm-qwen3-14b`
-4. Reduce `--gpu-memory-utilization` if OOM errors
-
-### TTS Service Slow to Start
-
-**Symptoms:** Health check times out
-
-**Cause:** First run downloads Fish Speech v1.5 models (~4GB)
-
-**Solution:** Wait up to 5 minutes for initial model download
-
-### ChromaDB Connection Issues
-
-**Symptoms:** Can't connect to ChromaDB
-
-**Solutions:**
-
-1. Verify service is running: `docker compose ps`
-2. Check port availability: `netstat -an | grep 8000`
-3. Review logs: `docker compose logs chroma`
-
-### n8n Workflow Errors
-
-**Symptoms:** Workflows fail or webhooks don't trigger
-
-**Solutions:**
-
-1. Verify `SERVER_EXTERNAL_IP` is correct
-2. Check firewall allows port 5678
-3. Review n8n logs: `docker compose logs n8n`
+```bash
+# Health checks
+curl http://localhost:8020/health   # TTS Service
+curl http://localhost:5678/healthz  # n8n
+```
 
 ---
 
-## Project Structure
+## Licensing
 
-```
-workos-mvp/
-├── docker-compose.yml          # Core AI services configuration
-├── README.md                   # This file
-│
-└── ghost-narrator/             # Audio narration pipeline
-    ├── .env.example            # Environment variable template
-    ├── docker-compose.yml      # Pipeline services configuration
-    ├── .gitignore              # Git ignore rules
-    │
-    ├── docs/
-    │   └── ARCHITECTURE.md     # Detailed architecture documentation
-    │
-    ├── n8n/
-    │   └── workflows/
-    │       ├── ghost-audio-pipeline.json         # Synthesizes audio from Ghost posts
-    │       ├── ghost-audio-callback.json         # Embeds audio player in Ghost
-    │       └── static-content-audio-pipeline.json # Synthesizes audio from static content
-    │
-    ├── scripts/
-    │   ├── init.sh             # VM initialization script
-    │   └── setup-gcp.sh        # GCP resource setup script
-    │
-    └── tts-service/            # Voice cloning TTS API
-        ├── Dockerfile          # Container build configuration
-        ├── README.md           # TTS service documentation
-        ├── QUICKSTART.md       # Quick start guide
-        ├── requirements.txt    # Python dependencies
-        ├── run-docker.sh       # Docker run script (Linux/Mac)
-        ├── run-docker.ps1      # Docker run script (Windows)
-        ├── app/                # FastAPI application code
-        └── voices/             # Voice samples directory
-```
+Ghost Narrator's code is MIT licensed — do whatever you want with it.
+
+However, the **default TTS model matters**:
+
+**Fish Speech v1.5 (current default)**
+- Licensed under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) and [Fish Audio Research License](https://github.com/fishaudio/fish-speech/blob/main/LICENSE)
+- **Non-commercial use only** unless you obtain a separate commercial license from Fish Audio
+- Fine for personal projects, research, non-commercial blogs
+
+**Qwen3-TTS (coming soon as new default)**
+- Licensed under [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0) — fully permissive, commercial use allowed
+- Repo: [Qwen/Qwen3-TTS on Hugging Face](https://huggingface.co/Qwen/Qwen3-TTS)
+- **Can't wait?** If you need commercial use now, you can swap to Qwen3-TTS yourself by pointing the TTS service at the Qwen3-TTS endpoint. We're actively working on this integration — PRs welcome.
+
+**Target state:** MIT code + Apache 2.0 models = fully permissive end-to-end. No licensing asterisks.
+
+The LLM component (Qwen 3.5 14B via Ollama) is already Apache 2.0 — no issues there.
+
+You are responsible for complying with the licenses of the underlying models you choose to use.
+
+---
+
+## Documentation
+
+- [Architecture Guide](ghost-narrator/docs/ARCHITECTURE.md) — full pipeline walkthrough
+- [TTS Service Docs](ghost-narrator/tts-service/README.md) — API reference & standalone usage
+- [TTS Quick Start](ghost-narrator/tts-service/QUICKSTART.md) — get TTS running in 5 minutes
+- [n8n Setup Guide](ghost-narrator/n8n/SETUP_GUIDE.md) — workflow configuration
+- [Contributing](ghost-narrator/CONTRIBUTING.md)
+- [Security Policy](ghost-narrator/SECURITY.md)
 
 ---
 
 ## License
 
-This project is proprietary. All rights reserved.
+MIT License (code). See [Licensing](#licensing) for model license details.
 
 ---
 
 ## Support
 
-For issues or questions:
+- [GitHub Issues](https://github.com/getsimpledirect/workos-mvp/issues)
+- [GitHub Discussions](https://github.com/getsimpledirect/workos-mvp/discussions)
 
-1. Check the [Troubleshooting](#troubleshooting) section
-2. Review service logs
-3. Consult the [Architecture Documentation](ghost-narrator/docs/ARCHITECTURE.md)
+---
+
+Built by [SimpleDirect](https://getsimpledirect.com)

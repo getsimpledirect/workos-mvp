@@ -1,3 +1,25 @@
+# MIT License
+#
+# Copyright (c) 2026 Ayush Naik
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
 """
 TTS job runner service for background processing.
 
@@ -19,7 +41,13 @@ from typing import Optional
 
 from pydub import AudioSegment as _AudioSegment
 
-from app.core.exceptions import JobDeletedError, SynthesisError, StorageError, AudioProcessingError, GCSUploadError
+from app.core.exceptions import (
+    JobDeletedError,
+    SynthesisError,
+    StorageError,
+    AudioProcessingError,
+    GCSUploadError,
+)
 from app.config import DEVICE, GCS_BUCKET_NAME, MAX_CHUNK_WORDS, OUTPUT_DIR
 from app.services.audio import (
     apply_final_mastering,
@@ -83,7 +111,9 @@ async def run_tts_job(
             if job.get("status") == "paused":
                 paused_iterations += 1
                 if paused_iterations >= max_paused_iterations:
-                    raise JobDeletedError(f"Job {job_id} exceeded maximum pause duration")
+                    raise JobDeletedError(
+                        f"Job {job_id} exceeded maximum pause duration"
+                    )
                 await asyncio.sleep(1)
                 continue
             paused_iterations = 0  # Reset counter when job is no longer paused
@@ -137,6 +167,7 @@ async def run_tts_job(
         # Wait for TTS engine to be ready (up to 60 seconds)
         engine_ready = False
         from app.core.tts_engine import get_tts_engine
+
         engine = get_tts_engine()
         for _ in range(60):
             if engine.is_ready:
@@ -170,7 +201,9 @@ async def run_tts_job(
 
         # Step 3: Normalize all chunks to -23 LUFS (in parallel for speed)
         await _check_status()
-        logger.info(f"[{job_id}] Normalizing {len(chunk_wav_paths)} chunks (parallel)...")
+        logger.info(
+            f"[{job_id}] Normalizing {len(chunk_wav_paths)} chunks (parallel)..."
+        )
 
         async def _normalize_one(i: int, wav_path: str) -> str:
             try:
@@ -189,9 +222,11 @@ async def run_tts_job(
                 )
                 return wav_path
 
-        normalized_wav_paths = list(await asyncio.gather(
-            *[_normalize_one(i, p) for i, p in enumerate(chunk_wav_paths)]
-        ))
+        normalized_wav_paths = list(
+            await asyncio.gather(
+                *[_normalize_one(i, p) for i, p in enumerate(chunk_wav_paths)]
+            )
+        )
 
         logger.info(f"[{job_id}] Normalization complete")
 
@@ -228,9 +263,7 @@ async def run_tts_job(
         mastering_used_fallback = False
         if not mastering_ok:
             # Fallback: use the raw MP3 if mastering fails
-            logger.warning(
-                f"[{job_id}] Mastering failed, falling back to raw export"
-            )
+            logger.warning(f"[{job_id}] Mastering failed, falling back to raw export")
             # Fallback: export raw WAV to MP3 without mastering
             if Path(raw_wav).exists():
                 seg = _AudioSegment.from_wav(raw_wav)
@@ -291,9 +324,13 @@ async def run_tts_job(
             "duration_seconds": total_duration,
         }
         if mastering_used_fallback:
-            completed_data["mastering_warning"] = "Audio mastering failed; raw export used"
+            completed_data["mastering_warning"] = (
+                "Audio mastering failed; raw export used"
+            )
         if gcs_upload_failed:
-            completed_data["gcs_upload_warning"] = "GCS upload failed; audio available locally only"
+            completed_data["gcs_upload_warning"] = (
+                "GCS upload failed; audio available locally only"
+            )
         await job_store.update(job_id, completed_data)
 
         logger.info(
@@ -306,15 +343,17 @@ async def run_tts_job(
 
     except (SynthesisError, StorageError, AudioProcessingError, GCSUploadError) as exc:
         duration = time.time() - start_time
-        logger.error(f"[{job_id}] ✗ Job failed due to specific domain error after {duration:.1f}s: {exc}")
-        
+        logger.error(
+            f"[{job_id}] ✗ Job failed due to specific domain error after {duration:.1f}s: {exc}"
+        )
+
         _cleanup_failed_job(job_dir, final_mp3, job_id)
         _cleanup_temp_files(normalized_temp_files, job_id)
         _cleanup_intermediate(raw_wav, job_id)
 
         error_name = exc.__class__.__name__
         error_msg = str(exc)[:450]
-        
+
         await job_store.update(
             job_id,
             {

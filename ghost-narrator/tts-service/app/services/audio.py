@@ -1,3 +1,25 @@
+# MIT License
+#
+# Copyright (c) 2026 Ayush Naik
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
 """
 Audio processing service for TTS output.
 
@@ -65,10 +87,16 @@ def normalize_chunk_to_target_lufs(
     try:
         result = subprocess.run(
             [
-                "ffmpeg", "-y", "-i", input_wav_path,
-                "-af", f"loudnorm=I={target_lufs}:TP=-1.5:LRA=7",
-                "-ar", "44100",  # Optimized for Fish Speech high-fidelity output
-                "-ac", "1",
+                "ffmpeg",
+                "-y",
+                "-i",
+                input_wav_path,
+                "-af",
+                f"loudnorm=I={target_lufs}:TP=-1.5:LRA=7",
+                "-ar",
+                "44100",  # Optimized for Fish Speech high-fidelity output
+                "-ac",
+                "1",
                 normalized_path,
             ],
             capture_output=True,
@@ -119,8 +147,12 @@ def apply_final_mastering(input_mp3_path: str, output_mp3_path: str) -> bool:
     try:
         result = subprocess.run(
             [
-                "ffmpeg", "-y", "-i", input_mp3_path,
-                "-af", (
+                "ffmpeg",
+                "-y",
+                "-i",
+                input_mp3_path,
+                "-af",
+                (
                     # Step 1: Remove leading silence (max 0.2s pre-roll)
                     "silenceremove=start_periods=1:start_silence=0.2:start_threshold=-40dB,"
                     # Step 2: EBU R128 loudness normalization
@@ -128,11 +160,16 @@ def apply_final_mastering(input_mp3_path: str, output_mp3_path: str) -> bool:
                     # Step 3: Hard limiter as safety net
                     "alimiter=level_in=1:level_out=1:limit=0.891:attack=5:release=50:level=disabled"
                 ),
-                "-ar", "44100",          # Upsample to standard 44.1kHz
-                "-ac", "1",              # Keep mono (voice narration)
-                "-codec:a", "libmp3lame",
-                "-b:a", "128k",          # 128kbps
-                "-q:a", "2",             # High quality VBR as backup
+                "-ar",
+                "44100",  # Upsample to standard 44.1kHz
+                "-ac",
+                "1",  # Keep mono (voice narration)
+                "-codec:a",
+                "libmp3lame",
+                "-b:a",
+                "128k",  # 128kbps
+                "-q:a",
+                "2",  # High quality VBR as backup
                 output_mp3_path,
             ],
             capture_output=True,
@@ -148,7 +185,7 @@ def apply_final_mastering(input_mp3_path: str, output_mp3_path: str) -> bool:
 
         logger.info(
             f"Mastering complete: {output_mp3_path} "
-            f"({Path(output_mp3_path).stat().st_size / (1024*1024):.2f} MB)"
+            f"({Path(output_mp3_path).stat().st_size / (1024 * 1024):.2f} MB)"
         )
         return True
 
@@ -179,9 +216,14 @@ def validate_audio_quality(mp3_path: str) -> dict:
         # Check integrated loudness via ebur128
         r = subprocess.run(
             [
-                "ffmpeg", "-i", mp3_path,
-                "-filter_complex", "ebur128=peak=true",
-                "-f", "null", "-",
+                "ffmpeg",
+                "-i",
+                mp3_path,
+                "-filter_complex",
+                "ebur128=peak=true",
+                "-f",
+                "null",
+                "-",
             ],
             capture_output=True,
             text=True,
@@ -217,9 +259,14 @@ def validate_audio_quality(mp3_path: str) -> dict:
         # Check for excessive silence gaps (> 1.2s)
         r2 = subprocess.run(
             [
-                "ffmpeg", "-i", mp3_path,
-                "-filter_complex", "silencedetect=noise=-40dB:d=1.2",
-                "-f", "null", "-",
+                "ffmpeg",
+                "-i",
+                mp3_path,
+                "-filter_complex",
+                "silencedetect=noise=-40dB:d=1.2",
+                "-f",
+                "null",
+                "-",
             ],
             capture_output=True,
             text=True,
@@ -227,8 +274,7 @@ def validate_audio_quality(mp3_path: str) -> dict:
         )
 
         long_gaps = [
-            line for line in r2.stderr.split("\n")
-            if "silence_duration" in line
+            line for line in r2.stderr.split("\n") if "silence_duration" in line
         ]
         results["long_silence_gaps_count"] = len(long_gaps)
         if long_gaps:
@@ -401,7 +447,9 @@ def concatenate_wavs_streaming(
             # If combined duration exceeds threshold, flush to disk
             if len(combined) > threshold_ms:
                 # Always flush to WAV for temporary files to maintain quality
-                fd, temp_path = tempfile.mkstemp(suffix=".wav", dir=Path(output_path).parent)
+                fd, temp_path = tempfile.mkstemp(
+                    suffix=".wav", dir=Path(output_path).parent
+                )
                 os.close(fd)
                 combined.export(temp_path, format="wav")
                 combined = AudioSegment.from_wav(temp_path)
@@ -465,7 +513,10 @@ def concatenate_wavs_auto(
             f"(threshold: {streaming_threshold_chunks})"
         )
         return concatenate_wavs_streaming(
-            wav_paths, output_path, chunk_texts, bitrate,
+            wav_paths,
+            output_path,
+            chunk_texts,
+            bitrate,
         )
     else:
         logger.debug(f"Using standard concatenation for {len(wav_paths)} chunks")
