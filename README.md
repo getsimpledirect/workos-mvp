@@ -8,6 +8,8 @@ Self-hosted AI narration for your blog. Replaces ElevenLabs (~$330/month) with a
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
+> **Licensing Notice:** Ghost Narrator currently uses Fish Speech v1.5 for TTS, which is licensed under CC BY-NC-SA 4.0 (non-commercial use only). **This means you cannot use Ghost Narrator commercially as-is.** We are actively migrating to Qwen3-TTS (Apache 2.0) which will enable full commercial use. Stay tuned — ETA: this week. See [Licensing](#licensing) below for details.
+
 ---
 
 ## What It Does
@@ -223,11 +225,27 @@ curl http://localhost:5678/healthz  # n8n
 
 ---
 
-## Model Licensing
+## Licensing
 
-Ghost Narrator's source code is MIT licensed. However, the **Fish Speech v1.5 model weights** are licensed under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) by Fish Audio. Commercial use of the model weights requires a separate license from [Fish Audio](https://fish.audio/).
+Ghost Narrator's code is MIT licensed — do whatever you want with it.
 
-You can freely use and modify this code, but check Fish Audio's terms for commercial use.
+However, the **default TTS model matters**:
+
+**Fish Speech v1.5 (current default)**
+- Licensed under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) and [Fish Audio Research License](https://github.com/fishaudio/fish-speech/blob/main/LICENSE)
+- **Non-commercial use only** unless you obtain a separate commercial license from Fish Audio
+- Fine for personal projects, research, non-commercial blogs
+
+**Qwen3-TTS (coming soon as new default)**
+- Licensed under [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0) — fully permissive, commercial use allowed
+- Repo: [https://huggingface.co/Qwen/Qwen3-TTS](https://huggingface.co/Qwen/Qwen3-TTS)
+- If you need commercial use now, you can swap to Qwen3-TTS yourself by updating the TTS service configuration to point to the Qwen3-TTS endpoint
+
+**Target state:** MIT code + Apache 2.0 models = fully permissive end-to-end. No licensing asterisks.
+
+The LLM component (Qwen 3.5 14B via Ollama) is already Apache 2.0 — no issues there.
+
+You are responsible for complying with the licenses of the underlying models you choose to use.
 
 ---
 
@@ -244,9 +262,7 @@ You can freely use and modify this code, but check Fish Audio's terms for commer
 
 ## License
 
-This project is licensed under the **MIT License**. See [LICENSE](LICENSE) for details.
-
-> **Note:** The Fish Speech v1.5 model weights are licensed under **CC BY-NC-SA 4.0** by Fish Audio. See [NOTICE](NOTICE) for details.
+MIT License (code). See [Licensing](#licensing) for model license details.
 
 ---
 
