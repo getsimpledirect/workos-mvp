@@ -42,7 +42,7 @@ gradio-client==1.4.0
 fish-speech @ git+https://github.com/fishaudio/fish-speech.git@v1.5.0
 
 # ── API Framework ──────────────────────────────────────────────────────────────
-fastapi==0.111.0
+fastapi==0.135.2
 uvicorn[standard]==0.30.1
 pydantic==2.9.2
 pydantic-core==2.23.4
