@@ -124,7 +124,7 @@
       "typeVersion": 2,
       "position": [1500, 200],
       "parameters": {
-        "jsCode": "const result = $input.first().json;\nconst meta = $('Validate & Extract Input').first().json;\nconsole.log(`TTS job submitted: ${meta.jobId} → gs://ghost-narrator/${meta.gcsPath}`);\nif (result.error || result.detail) {\n  throw new Error('TTS service rejected job: ' + (result.error || result.detail));\n}\nreturn [{ json: { success: true, jobId: meta.jobId, gcsPath: meta.gcsPath, ...result } }];"
+        "jsCode": "const result = $input.first().json;\nconst meta = $('Validate & Extract Input').first().json;\nconsole.log(`TTS job submitted: ${meta.jobId} → gs://YOUR_BUCKET/${meta.gcsPath}`);\nif (result.error || result.detail) {\n  throw new Error('TTS service rejected job: ' + (result.error || result.detail));\n}\nreturn [{ json: { success: true, jobId: meta.jobId, gcsPath: meta.gcsPath, ...result } }];"
       }
     }
   ],
