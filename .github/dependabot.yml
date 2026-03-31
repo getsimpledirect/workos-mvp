@@ -1,0 +1,12 @@
+version: 2
+updates:
+  # Python dependencies (TTS service)
+  - package-ecosystem: "pip"
+    directory: "/ghost-narrator/tts-service"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "python"

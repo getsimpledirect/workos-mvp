@@ -1,5 +1,8 @@
 {
   "name": "Ghost Audio Callback & Embed",
+  "license": "MIT",
+  "licenseUrl": "https://opensource.org/licenses/MIT",
+  "author": "Ayush Naik",
   "nodes": [
     {
       "id": "webhook-tts-callback",
@@ -85,7 +88,7 @@
         100
       ],
       "parameters": {
-        "jsCode": "const siteSlug = $json.siteSlug;\nconst isSite1 = siteSlug.includes('founderreality');\n\n// Try environment variables first, then n8n variables\nconst apiKey1 = $env.GHOST_SITE1_ADMIN_API_KEY || $vars.GHOST_SITE1_ADMIN_API_KEY;\nconst apiKey2 = $env.GHOST_SITE2_ADMIN_API_KEY || $vars.GHOST_SITE2_ADMIN_API_KEY;\n\nconst adminApiKey = isSite1 ? apiKey1 : apiKey2;\n\nif (!adminApiKey || !adminApiKey.includes(':')) {\n  throw new Error('Admin API key missing or invalid format (expected key_id:secret). Check n8n Variables or .env.');\n}\n\nconst [keyId, secret] = adminApiKey.split(':');\n\n// Determine Ghost URL dynamically from env if available, fallback to hardcoded\nconst ghostUrl = isSite1\n  ? ($env.GHOST_SITE1_URL || 'https://ghost.founderreality.com')\n  : ($env.GHOST_SITE2_URL || 'https://ghost.getsimpledirect.com');\n\nreturn [{\n  json: {\n    ...$json,\n    ghostKeyId: keyId,\n    ghostSecret: secret,\n    ghostUrl: ghostUrl\n  }\n}];"
+        "jsCode": "// Dynamic site detection based on Ghost webhook URL\n// Extract hostname from post URL and match against configured GHOST_SITE URLs\n\nconst postUrl = $json.post?.url || $json.url;\nconst postHostname = postUrl ? new URL(postUrl).hostname : '';\n\n// Get configured URLs from environment\nconst site1Url = $env.GHOST_SITE1_URL || '';\nconst site2Url = $env.GHOST_SITE2_URL || '';\n\n// Extract hostnames from configured URLs\nconst site1Hostname = site1Url ? new URL(site1Url).hostname : '';\nconst site2Hostname = site2Url ? new URL(site2Url).hostname : '';\n\n// Detect which site based on hostname match\nconst isSite1 = postHostname && site1Hostname && postHostname.includes(site1Hostname);\nconst isSite2 = postHostname && site2Hostname && postHostname.includes(site2Hostname);\n\n// Get API keys from environment or fall back to n8n variables\nconst adminApiKey1 = $env.GHOST_SITE1_ADMIN_API_KEY || $vars.GHOST_SITE1_ADMIN_API_KEY;\nconst adminApiKey2 = $env.GHOST_SITE2_ADMIN_API_KEY || $vars.GHOST_SITE2_ADMIN_API_KEY;\n\n// Select appropriate credentials\nconst adminApiKey = isSite1 ? adminApiKey1 : isSite2 ? adminApiKey2 : null;\nconst ghostUrl = isSite1 ? site1Url : isSite2 ? site2Url : null;\n\nif (!adminApiKey || !adminApiKey.includes(':')) {\n  throw new Error('Admin API key missing or invalid. Configure GHOST_SITE1_ADMIN_API_KEY and GHOST_SITE2_ADMIN_API_KEY in .env or n8n Variables. Also ensure GHOST_SITE1_URL and GHOST_SITE2_URL are set.');\n}\n\nif (!ghostUrl) {\n  throw new Error('Ghost URL not detected. Ensure GHOST_SITE1_URL and GHOST_SITE2_URL are configured in .env.');\n}\n\nconst [keyId, secret] = adminApiKey.split(':');\n\nreturn [{\n  json: {\n    ...$json,\n    ghostKeyId: keyId,\n    ghostSecret: secret,\n    ghostUrl: ghostUrl\n  }\n}];"
       }
     },
     {

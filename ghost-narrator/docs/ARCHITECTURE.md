@@ -26,7 +26,7 @@
 
 ## What This Pipeline Does
 
-Every time you publish a post on either of your Ghost websites, this pipeline automatically:
+Every time you publish a post on your [Ghost](https://ghost.org/) website, this pipeline automatically:
 
 1. **Detects** the new article via a Ghost webhook
 2. **Fetches** the full article text using the Ghost Content API
@@ -90,13 +90,13 @@ Every time you publish a post on either of your Ghost websites, this pipeline au
 │                                                                           │
 │  ┌──────────────────────┐       ┌──────────────────────┐                │
 │  │  Ghost CMS Site 1    │       │  Ghost CMS Site 2    │                │
-│  │  founderreality.com  │       │  your-second-site.com│                │
+│  │  ghost-site-1.com  │       │  ghost-site-2.com│                │
 │  │  (sends webhooks)    │       │  (sends webhooks)    │                │
 │  └──────────────────────┘       └──────────────────────┘                │
 │                                                                           │
 │  ┌──────────────────────────────────────────────────────────────┐       │
 │  │  Google Cloud Storage                                          │       │
-│  │  gs://ghost-narrator/audio/articles/site/slug.mp3            │       │
+│  │  gs://YOUR_BUCKET/audio/articles/site/slug.mp3               │       │
 │  └──────────────────────────────────────────────────────────────┘       │
 └───────────────────────────────────────────────────────────────────────────┘
 ```
@@ -724,7 +724,7 @@ This is the entry point. When you publish an article in Ghost, Ghost sends a POS
       "html": "<p>When founders think about exit strategy...</p>",
       "plaintext": "When founders think about exit strategy...",
       "status": "published",
-      "url": "https://founderreality.com/blog/exit-strategy-..."
+      "url": "https://your-ghost-site.com/blog/exit-strategy-..."
     }
   }
 }
@@ -804,7 +804,7 @@ This node digs into `choices[0].message.content` and passes it forward along wit
 Calls your TTS service:
 ```
 POST http://tts-service:8020/tts/generate
-Body: { "text": "..narration script..", "job_id": "site-pid-{postId}-{slug}-{timestamp}", "site_slug": "founderreality-com" }
+Body: { "text": "..narration script..", "job_id": "site-pid-{postId}-{slug}-{timestamp}", "site_slug": "site1-com" }
 ```
 
 The TTS service returns immediately with job queued status:
@@ -857,7 +857,7 @@ Uses `PUT /ghost/api/admin/posts/{id}/` to update the live article on Ghost with
 
 ## Ghost Webhook Configuration
 
-For **each** of your 2 Ghost websites:
+For **each** of your Ghost websites:
 
 1. Go to **Ghost Admin** → **Settings** → **Integrations**
 2. Click **Add custom integration**
@@ -944,8 +944,8 @@ gcloud iam service-accounts keys create \
 
 ### Create Bucket
 ```bash
-# Create in asia-south1 (Mumbai — close to India, low latency)
-gsutil mb -p $PROJECT_ID -l asia-south1 gs://YOUR_BUCKET_NAME/
+# Create in northamerica-northeast2 (Toronto) — choose a region close to your users
+gsutil mb -p $PROJECT_ID -l northamerica-northeast2 gs://YOUR_BUCKET_NAME/
 
 # Make objects publicly readable
 gsutil iam ch allUsers:objectViewer gs://YOUR_BUCKET_NAME/
@@ -1006,7 +1006,7 @@ In n8n UI, open the workflow → click **"Test Workflow"** → manually trigger 
       "title": "Test Article",
       "plaintext": "This is a test article with some content to narrate.",
       "status": "published",
-      "url": "https://founderreality.com/blog/test-article"
+      "url": "https://your-ghost-site.com/blog/test-article"
     }
   }
 }
@@ -1106,9 +1106,9 @@ The script walks you through configuration step by step:
 
 | Prompt | Default | Notes |
 |---|---|---|
-| n8n webhook URL | `http://34.130.76.88:5678/webhook/ghost-published` | Your VM's public IP — change if different |
+| n8n webhook URL | `http://YOUR_VM_IP:5678/webhook/ghost-published` | Your VM's public IP — change if different |
 | Number of Ghost sites | `1` | Enter `2` to process both sites in one run |
-| Ghost URL | *(required)* | e.g. `https://ghost.founderreality.com` |
+| Ghost URL | *(required)* | e.g. `https://ghost.your-site.com` |
 | Content API key | *(required)* | From Ghost Admin → Integrations |
 | Delay between jobs (seconds) | `300` | See pacing guide below |
 | Dry run? | `N` | Enter `y` to preview without triggering |
@@ -1142,10 +1142,10 @@ While the script runs, monitor the pipeline in parallel:
 
 ```bash
 # n8n workflow executions
-open http://34.130.76.88:5678
+open http://YOUR_VM_IP:5678
 
 # TTS job status
-curl http://34.130.76.88:8020/health
+curl http://YOUR_VM_IP:8020/health
 
 # Live TTS logs
 docker logs -f tts-service

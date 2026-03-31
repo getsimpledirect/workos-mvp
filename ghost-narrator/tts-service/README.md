@@ -117,7 +117,7 @@ ReadTimeoutError: HTTPSConnectionPool
 2. Retry the build (timeout settings are already configured in Dockerfile)
 3. If in restricted network, configure pip mirror in Dockerfile:
    ```dockerfile
-   ENV PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+   ENV PIP_INDEX_URL=https://pypi.org/simple
    ```
 
 #### 5. fish-speech Installation Fails
