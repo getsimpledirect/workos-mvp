@@ -5,6 +5,10 @@ on:
     branches:
       - main
 
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   bump-version:
     # Skip if this push IS the bump commit itself (prevents infinite loop).
@@ -16,7 +20,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.RELEASE_TOKEN }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -48,9 +52,22 @@ jobs:
 
           echo "version=$(cat VERSION)" >> $GITHUB_OUTPUT
 
-      - name: Push changes
+      - name: Push bump via PR
         if: steps.bump.outputs.bumped == 'true'
-        run: git push origin main --tags
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BUMP_BRANCH="auto/bump-v${{ steps.bump.outputs.version }}"
+          git checkout -b "$BUMP_BRANCH"
+          git push origin "$BUMP_BRANCH" --tags
+
+          PR_URL=$(gh pr create \
+            --title "bump: version ${{ steps.bump.outputs.version }}" \
+            --body "Automated version bump by Commitizen." \
+            --base main \
+            --head "$BUMP_BRANCH")
+
+          gh pr merge "$PR_URL" --auto --squash
 
       - name: Generate release notes
         if: steps.bump.outputs.bumped == 'true'
