@@ -60,7 +60,7 @@ soundfile==0.12.1
 librosa==0.10.2
 resampy>=0.4.3
 audioread>=2.1.9
-numba==0.60.0  # Pin for librosa compatibility
+numba==0.65.0  # Pin for librosa compatibility
 llvmlite==0.43.0  # Pin for numba compatibility
 
 # ── Google Cloud Storage ───────────────────────────────────────────────────────
