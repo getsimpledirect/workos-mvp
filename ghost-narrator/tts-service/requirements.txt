@@ -17,7 +17,7 @@ pip>=24.0
 
 # ── PyTorch Stack (Pinned to stable CUDA 12.1 compatible versions) ────────────
 torch==2.4.1
-torchaudio==2.4.1
+torchaudio==2.11.0
 torchvision==0.19.1
 triton==3.0.0
 numpy==1.26.4  # Downgrade from 2.1.1 for compatibility
