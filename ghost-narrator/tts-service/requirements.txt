@@ -28,7 +28,7 @@ tokenizers>=0.20.0,<0.21
 safetensors>=0.4.1
 
 # ── Lightning Stack (Pinned for stability) ────────────────────────────────────
-lightning==2.2.5
+lightning==2.6.1
 pytorch-lightning==2.2.5
 lightning-utilities==0.11.2
 torchmetrics==1.4.0
