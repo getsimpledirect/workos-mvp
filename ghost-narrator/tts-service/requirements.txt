@@ -16,7 +16,7 @@ wheel==0.44.0
 pip>=24.0
 
 # ── PyTorch Stack (Pinned to stable CUDA 12.1 compatible versions) ────────────
-torch==2.4.1
+torch==2.11.0
 torchaudio==2.4.1
 torchvision==0.19.1
 triton==3.0.0
