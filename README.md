@@ -11,7 +11,7 @@
 > - Simplified one-command installation with interactive setup
 > - Production-ready architecture with monitoring, multi-voice support, and cloud storage options
 > 
-> Please visit the new repository for the latest features, documentation, and updates.
+> Please note that the rest of this README file will be updated in the future to reflect the documentation for the new version. For now, please visit the new repository for the latest features, documentation, and updates.
 
 # Ghost Narrator
 
