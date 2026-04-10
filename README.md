@@ -2,6 +2,17 @@
   <img src="assets/ghost-narrator-banner.png" alt="Ghost Narrator — Open Source AI Narration for Your Blog" width="100%">
 </p>
 
+> **Important Notice:** This repository contains the original work-in-progress version of Ghost Narrator. A significantly improved, production-ready version has been open sourced as a standalone project at [https://github.com/getsimpledirect/ghost-narrator](https://github.com/getsimpledirect/ghost-narrator). 
+> 
+> The new version features:
+> - Fully permissive licensing (MIT code + Apache 2.0 AI models)
+> - Bundled Ollama LLM (no external API dependencies)
+> - Automatic hardware detection and optimization (CPU-only to high-end GPU tiers)
+> - Simplified one-command installation with interactive setup
+> - Production-ready architecture with monitoring, multi-voice support, and cloud storage options
+> 
+> Note: This repository is focused on WorkOS integrations, and these implementations may evolve over time. The rest of this README file reflects the current state of this MVP and may change as the WorkOS integrations develop.
+
 # Ghost Narrator
 
 Self-hosted AI narration for your blog. Replaces ElevenLabs (~$330/month) with a local stack that costs you electricity.
