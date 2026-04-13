@@ -85,7 +85,7 @@ redis==5.0.1
 # ── Utilities ──────────────────────────────────────────────────────────────────
 pytest>=7.0.0
 pytest-asyncio>=0.21.0
-python-multipart==0.0.9
+python-multipart==0.0.26
 typing-extensions==4.11.0
 rich>=13.5.3
 loguru>=0.6.0
