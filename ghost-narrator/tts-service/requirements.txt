@@ -112,7 +112,7 @@ inflect==7.0.0
 huggingface-hub>=0.36.0
 anyascii==0.3.2
 gruut[de,es,fr]==2.2.3
-bangla==0.0.2
+bangla==0.0.5
 bnnumerizer==0.0.2
 bnunicodenormalizer==0.1.6
 tiktoken>=0.8.0
