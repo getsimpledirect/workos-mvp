@@ -24,7 +24,7 @@ numpy==1.26.4  # Downgrade from 2.1.1 for compatibility
 
 # ── Transformers (Optimized for LLaMA-based TTS) ──────────────────────────────
 transformers==4.45.2
-tokenizers>=0.20.0,<0.21
+tokenizers>=0.20.0,<0.23
 safetensors>=0.4.1
 
 # ── Lightning Stack (Pinned for stability) ────────────────────────────────────
