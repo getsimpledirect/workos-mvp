@@ -2,50 +2,38 @@
   <img src="assets/ghost-narrator-banner.png" alt="Ghost Narrator — Open Source AI Narration for Your Blog" width="100%">
 </p>
 
-> **Important Notice:** This repository contains the original work-in-progress version of Ghost Narrator. A significantly improved, production-ready version has been open sourced as a standalone project at [https://github.com/getsimpledirect/ghost-narrator](https://github.com/getsimpledirect/ghost-narrator). 
-> 
-> The new version features:
-> - Fully permissive licensing (MIT code + Apache 2.0 AI models)
-> - Bundled Ollama LLM (no external API dependencies)
-> - Automatic hardware detection and optimization (CPU-only to high-end GPU tiers)
-> - Simplified one-command installation with interactive setup
-> - Production-ready architecture with monitoring, multi-voice support, and cloud storage options
-> 
-> Note: This repository is focused on WorkOS integrations, and these implementations may evolve over time. The rest of this README file reflects the current state of this MVP and may change as the WorkOS integrations develop.
+# WorkOS MVP and Legacy Ghost Narrator
 
-# Ghost Narrator
+This repository retains an earlier AI infrastructure stack, the original Ghost narration implementation and WorkOS integration work. Current standalone narration development lives in [ghost-narrator](https://github.com/getsimpledirect/ghost-narrator).
 
-Self-hosted AI narration for your blog. Replaces ElevenLabs (~$330/month) with a local stack that costs you electricity.
+The historical instructions below describe this implementation, not the successor. The Fish Speech model restrictions still matter when reproducing it. Before retiring this repository, verify consumers: the [Founder Reality website](https://github.com/getsimpledirect/founder-reality-web-app) documents a static-audio workflow using this stack. A successor repository alone does not prove that consumer has migrated.
+
+## Repository guide
+
+- [docker-compose.yml](docker-compose.yml): optional core inference/search stack.
+- [start-core.sh](start-core.sh): core-stack entry point.
+- [ghost-narrator/](ghost-narrator/): original narration service, n8n workflows and operations documentation.
+- [LICENSE](LICENSE) and [NOTICE](NOTICE): code license and notices.
+
+## Historical narration implementation
+
+Historical self-hosted narration for Ghost CMS.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-> **Licensing Notice:** Ghost Narrator currently uses Fish Speech v1.5 for TTS, which is licensed under CC BY-NC-SA 4.0 (non-commercial use only). **This means you cannot use Ghost Narrator commercially as-is.** We are actively migrating to Qwen3-TTS (Apache 2.0) which will enable full commercial use. Stay tuned — ETA: this week. See [Licensing](#licensing) below for details.
+> **Licensing Notice:** Ghost Narrator currently uses Fish Speech v1.5 for TTS, which is licensed under CC BY-NC-SA 4.0 (non-commercial use only). **This means you cannot use Ghost Narrator commercially as-is.** We are actively migrating to Qwen3-TTS (Apache 2.0) which will enable full commercial use. That migration plan is historical; see the successor repository for its actual implementation, and [Licensing](#licensing) for this snapshot's model terms.
 
 ---
 
 ## What It Does
 
-Publish an article on Ghost CMS → Ghost Narrator automatically generates a voice-narrated audio version using your cloned voice and embeds the player in your post. No cloud TTS APIs. No per-character billing. Your voice, your hardware, your data.
+Publish an article on Ghost CMS → Ghost Narrator automatically generates a voice-narrated audio version using your cloned voice and embeds the player in your post. The configured model endpoint and storage backend determine the data path; optional cloud integrations are separate from local inference.
 
 ```
 Ghost CMS (publish) → n8n (orchestrate) → LLM (rewrite for narration) → Fish Speech v1.5 (synthesize) → Storage (MP3) → Ghost (embed player)
 ```
 
 > **Read the full story:** [You Cannot Buy What Can Only Be Built](https://founderreality.com/blog/you-cannot-buy-what-can-only-be-built) — why we built this and how it works.
-
----
-
-## Cost Comparison
-
-| | ElevenLabs Scale | Ghost Narrator |
-|---|---|---|
-| Monthly cost | ~$330 | $0 (self-hosted) |
-| Per-character billing | Yes | No |
-| Voice cloning | Yes | Yes (30-60s voice sample) |
-| Data privacy | Cloud | 100% local |
-| Latency | Fast | ~2-5 min per article |
-| Quality | Excellent | Good (some trade-offs) |
-| Effort to set up | Sign up | ~1 hour |
 
 ---
 
@@ -238,7 +226,7 @@ curl http://localhost:5678/healthz  # n8n
 
 ## Licensing
 
-Ghost Narrator's code is MIT licensed — do whatever you want with it.
+This repository's code is [MIT licensed](LICENSE). Preserve the copyright and permission notices; model and dependency terms remain separate.
 
 However, the **default TTS model matters**:
 
