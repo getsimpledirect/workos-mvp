@@ -65,7 +65,7 @@ The root `docker-compose.yml` spins up:
 
 ```bash
 # Start the full stack
-./start-core.sh
+bash ./start-core.sh
 
 # Then point Ghost Narrator at it
 VLLM_BASE_URL=http://host.docker.internal:8001/v1
@@ -129,7 +129,7 @@ cp .env.example .env
 cp /path/to/your/voice.wav tts-service/voices/reference.wav
 
 # Start
-./scripts/init.sh
+bash ./scripts/init.sh
 ```
 
 Then configure your Ghost site to send webhooks to:
@@ -145,7 +145,7 @@ Publish an article. Ghost Narrator handles the rest.
 
 **Google Cloud Storage (optional):** For production, store audio in GCS:
 ```bash
-./scripts/setup-gcp.sh
+bash ./scripts/setup-gcp.sh
 ```
 
 ---
